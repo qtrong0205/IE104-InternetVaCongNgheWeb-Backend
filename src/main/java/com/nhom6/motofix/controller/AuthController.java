@@ -2,7 +2,7 @@ package com.nhom6.motofix.controller;
 
 import com.nhom6.motofix.dto.request.RegisterRequest;
 import com.nhom6.motofix.dto.respond.RegisterResponse;
-import com.nhom6.motofix.service.RegistrationService;
+import com.nhom6.motofix.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
-    private final RegistrationService  registrationService;
+    private final AuthService authService;
 
     @PostMapping("/register")
     public ResponseEntity<RegisterResponse> register(
@@ -24,7 +24,7 @@ public class AuthController {
     ) {
 
         RegisterResponse response =
-                registrationService.register(request);
+                authService.register(request);
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
