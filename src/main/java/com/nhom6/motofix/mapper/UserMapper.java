@@ -1,6 +1,7 @@
 package com.nhom6.motofix.mapper;
 
 import com.nhom6.motofix.dto.request.RegisterRequest;
+import com.nhom6.motofix.dto.respond.LoginResponse;
 import com.nhom6.motofix.dto.respond.RegisterResponse;
 import com.nhom6.motofix.entity.Role;
 import com.nhom6.motofix.entity.User;
@@ -28,6 +29,25 @@ public interface UserMapper {
     @Named("mapRolesToStrings")
     default Set<String> mapRolesToStrings(Set<Role> roles) {
         if (roles == null) return Set.of();
+        return roles.stream()
+                .map(Role::getName)
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * Ánh xạ từ User Entity sang LoginResponse.UserInfo
+     */
+    @Mapping(target = "roles", source = "roles", qualifiedByName = "mapRolesToNames")
+    LoginResponse.UserInfo toLoginUserInfo(User user);
+
+    /**
+     * Custom mapper chuyển đổi Set<Role> thành Set<String> tên Role
+     */
+    @Named("mapRolesToNames")
+    default Set<String> mapRolesToNames(Set<Role> roles) {
+        if (roles == null) {
+            return Set.of();
+        }
         return roles.stream()
                 .map(Role::getName)
                 .collect(Collectors.toSet());

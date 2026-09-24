@@ -1,6 +1,8 @@
 package com.nhom6.motofix.controller;
 
+import com.nhom6.motofix.dto.request.LoginRequest;
 import com.nhom6.motofix.dto.request.RegisterRequest;
+import com.nhom6.motofix.dto.respond.LoginResponse;
 import com.nhom6.motofix.dto.respond.RegisterResponse;
 import com.nhom6.motofix.service.AuthService;
 import jakarta.validation.Valid;
@@ -29,5 +31,16 @@ public class AuthController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(response);
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<LoginResponse> login(
+            @Valid @RequestBody LoginRequest request
+    ) {
+
+        LoginResponse response =
+                authService.login(request);
+
+        return ResponseEntity.ok(response);
     }
 }
