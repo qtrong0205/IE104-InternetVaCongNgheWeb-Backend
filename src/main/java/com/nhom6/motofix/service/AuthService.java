@@ -6,6 +6,9 @@ import com.nhom6.motofix.dto.respond.LoginResponse;
 import com.nhom6.motofix.dto.respond.RegisterResponse;
 import com.nhom6.motofix.entity.Role;
 import com.nhom6.motofix.entity.User;
+import com.nhom6.motofix.exception.BadRequestException;
+import com.nhom6.motofix.exception.ResourceNotFoundException;
+import com.nhom6.motofix.exception.UnauthorizedException;
 import com.nhom6.motofix.mapper.UserMapper;
 import com.nhom6.motofix.repository.RoleRepository;
 import com.nhom6.motofix.repository.UserRepository;
@@ -33,18 +36,18 @@ public class AuthService {
 
         // 2. Kiểm tra email
         if (userRepository.existsByEmail(email)) {
-            throw new IllegalArgumentException("Email already exists");
+            throw new BadRequestException("Email already exists");
         }
 
         // 3. Kiểm tra phone
         if (userRepository.existsByPhone(phone)) {
-            throw new IllegalArgumentException("Phone already exists");
+            throw new BadRequestException("Phone already exists");
         }
 
         // 4. Tìm role USER
         Role userRole = roleRepository.findByName("USER")
                 .orElseThrow(() ->
-                        new IllegalStateException("USER role does not exist")
+                        new ResourceNotFoundException("USER role does not exist")
                 );
 
         // 5. Tạo user
@@ -78,17 +81,17 @@ public class AuthService {
         // 2. Tìm kiếm User theo email
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() ->
-                        new IllegalArgumentException("Invalid email or password")
+                        new UnauthorizedException("Invalid email or password")
                 );
 
         // 3. Kiểm tra trạng thái tài khoản
         if ("locked".equalsIgnoreCase(user.getStatus())) {
-            throw new IllegalStateException("Account is locked");
+            throw new UnauthorizedException("Account is locked");
         }
 
         // 4. Kiểm tra tính hợp lệ của mật khẩu
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            throw new IllegalArgumentException("Invalid email or password");
+            throw new UnauthorizedException("Invalid email or password");
         }
 
         // 5. Tạo JWT Token
