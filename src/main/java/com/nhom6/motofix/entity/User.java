@@ -51,6 +51,9 @@ public class User {
     )
     private Set<Role> roles = new HashSet<>();
 
+    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)
+    private ProviderProfile providerProfile;
+
     @PrePersist
     protected void onCreate() {
         LocalDateTime now = LocalDateTime.now();
