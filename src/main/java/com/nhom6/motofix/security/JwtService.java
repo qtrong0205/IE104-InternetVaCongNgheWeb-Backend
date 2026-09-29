@@ -68,6 +68,10 @@ public class JwtService {
         return jwt.getSubject();
     }
 
+    public String extractUserId(String token) {
+        return extractClaim(token, Claims::getSubject);
+    }
+
     /**
      * Trích xuất danh sách Roles lưu trong Token (Phục vụ cho Security Filter)
      */
