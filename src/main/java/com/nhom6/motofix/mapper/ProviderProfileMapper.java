@@ -12,7 +12,7 @@ public interface ProviderProfileMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "approvalStatus", ignore = true)
     @Mapping(target = "rejectionReason", ignore = true)
-    @Mapping(target = "isActive", ignore = true)
+    @Mapping(target = "active", ignore = true)
     @Mapping(target = "ratingAvg", ignore = true)
     @Mapping(target = "ratingCount", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
