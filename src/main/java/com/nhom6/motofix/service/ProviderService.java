@@ -2,14 +2,11 @@ package com.nhom6.motofix.service;
 
 import com.nhom6.motofix.dto.request.ProviderProfileRequest;
 import com.nhom6.motofix.dto.respond.ProviderProfileResponse;
+import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.exception.BadRequestException;
-import com.nhom6.motofix.exception.ResourceNotFoundException;
 import com.nhom6.motofix.mapper.ProviderProfileMapper;
 import com.nhom6.motofix.repository.ProviderProfileRepository;
-import com.nhom6.motofix.repository.UserRepository;
-import com.nhom6.motofix.security.JwtService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
@@ -17,25 +14,18 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class ProviderService {
-    private final JwtService jwtService;
-    private final UserRepository userRepository;
     private final ProviderProfileRepository providerProfileRepository;
     private final ProviderProfileMapper providerProfileMapper;
 
     public ProviderProfileResponse uploadProfile(
-        Jwt jwt,
+        User user,
         ProviderProfileRequest request
     ){
-        // Lấy user id từ access token
-        String rawId = jwtService.extractUserId(jwt);
-        UUID userId = UUID.fromString(rawId);
-
-        // Kiểm tra user tồn tại hay chưa
-        var user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not exist"));
+        // Lấy user id
+        UUID userId = user.getId();
 
         // Kiểm trả profile tồn tại chưa
-        if(providerProfileRepository.existByUserId(userId)){
+        if(providerProfileRepository.existsByUserId(userId)){
             throw new BadRequestException("Profile already existed");
         }
 
