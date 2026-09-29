@@ -2,11 +2,13 @@ package com.nhom6.motofix.security;
 
 import com.nhom6.motofix.entity.Role;
 import com.nhom6.motofix.entity.User;
+import com.nhom6.motofix.exception.BadRequestException;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
@@ -62,8 +64,8 @@ public class JwtService {
     /**
      * Trích xuất User ID (Subject) lưu trong Token
      */
-    public String extractUserId(String token) {
-        return extractClaim(token, Claims::getSubject);
+    public String extractUserId(Jwt jwt) {
+        return jwt.getSubject();
     }
 
     /**
