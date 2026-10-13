@@ -70,6 +70,9 @@ public class ProviderProfile {
     @OneToMany(mappedBy = "provider", fetch = FetchType.LAZY)
     private List<Booking> bookings = new ArrayList<>();
 
+    @OneToMany(mappedBy = "provider", fetch = FetchType.LAZY)
+    private List<BookingOffer> offers = new ArrayList<>();
+
     @PrePersist
     protected void onCreate() {
         LocalDateTime now = LocalDateTime.now();

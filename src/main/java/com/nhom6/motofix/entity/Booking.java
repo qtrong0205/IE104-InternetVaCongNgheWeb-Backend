@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -22,17 +23,17 @@ public class Booking {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "problem_description")
+    @Column(name = "problem_description", nullable = false, columnDefinition = "TEXT")
     private String problemDescription;
 
     @Column(name = "media_urls")
-    private List<String> mediaUrls;
+    private List<String> mediaUrls = new ArrayList<>();
 
-    @Column
-    private float latitude;
+    @Column(nullable = false)
+    private Double latitude;
 
-    @Column
-    private float longitude;
+    @Column(nullable = false)
+    private Double longitude;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -48,6 +49,12 @@ public class Booking {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "provider_id")
     private ProviderProfile provider;
+
+    @OneToMany(mappedBy = "booking", fetch = FetchType.LAZY)
+    private List<BookingOffer> offers = new ArrayList<>();
+
+    @OneToMany(mappedBy = "booking", fetch = FetchType.LAZY)
+    private List<RepairQuote> quotes = new ArrayList<>();
 
     @PrePersist
     protected void onCreate() {
