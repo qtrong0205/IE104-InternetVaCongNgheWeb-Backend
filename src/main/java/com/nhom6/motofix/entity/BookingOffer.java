@@ -1,0 +1,48 @@
+package com.nhom6.motofix.entity;
+
+import com.nhom6.motofix.enums.OfferStatus;
+import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.math.BigDecimal;
+import java.util.UUID;
+
+@Entity
+@Table(name = "booking_offers")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+public class BookingOffer {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private OfferStatus status;
+
+    @Column(name = "estimated_min", precision = 12)
+    private BigDecimal estimatedMin;
+
+    @Column(name = "estimated_max", precision = 12)
+    private BigDecimal estimatedMax;
+
+    @Column(name = "estimated_arrival_minutes")
+    private Integer estimatedArrivalMinutes;
+
+    @Column(columnDefinition = "TEXT")
+    private String note;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "booking_id", nullable = false)
+    private Booking booking;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "provider_id", nullable = false)
+    private ProviderProfile provider;
+}

@@ -8,6 +8,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -64,6 +66,12 @@ public class ProviderProfile {
     @OneToOne
     @JoinColumn(name = "user_id", nullable = false, unique = true)
     private User user;
+
+    @OneToMany(mappedBy = "provider", fetch = FetchType.LAZY)
+    private List<Booking> bookings = new ArrayList<>();
+
+    @OneToMany(mappedBy = "provider", fetch = FetchType.LAZY)
+    private List<BookingOffer> offers = new ArrayList<>();
 
     @PrePersist
     protected void onCreate() {
