@@ -8,6 +8,8 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -15,6 +17,7 @@ public class SupabaseStorageService {
 
     private static final long MAX_IMAGE_SIZE = 5L * 1024 * 1024;   // 5 MB
     private static final long MAX_VIDEO_SIZE = 50L * 1024 * 1024;  // 50 MB
+    private static final int MAX_FILES = 10;
 
     @Value("${spring.supabase.url}")
     private String supabaseUrl;
@@ -46,6 +49,33 @@ public class SupabaseStorageService {
         MediaType mediaType = getVideoMediaType(extension);
 
         return upload(file, videoBucket, extension, mediaType);
+    }
+
+    public String uploadMedia(MultipartFile file) throws IOException {
+        String contentType = file.getContentType();
+
+        if (contentType != null && contentType.startsWith("image/")) {
+            return uploadImage(file);
+        }
+        if (contentType != null && contentType.startsWith("video/")) {
+            return uploadVideo(file);
+        }
+        throw new IllegalArgumentException("Only image or video files are allowed");
+    }
+
+    public List<String> uploadMedia(List<MultipartFile> files) throws IOException {
+        if (files == null || files.isEmpty()) {
+            throw new IllegalArgumentException("No files provided");
+        }
+        if (files.size() > MAX_FILES) {
+            throw new IllegalArgumentException("Too many files (max " + MAX_FILES + ")");
+        }
+
+        List<String> urls = new ArrayList<>();
+        for (MultipartFile file : files) {
+            urls.add(uploadMedia(file));
+        }
+        return urls;
     }
 
     private String upload(MultipartFile file, String bucket, String extension, MediaType mediaType)
