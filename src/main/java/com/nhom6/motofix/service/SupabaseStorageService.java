@@ -1,5 +1,6 @@
 package com.nhom6.motofix.service;
 
+import com.nhom6.motofix.dto.respond.UploadMediaResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -51,19 +52,17 @@ public class SupabaseStorageService {
         return upload(file, videoBucket, extension, mediaType);
     }
 
-    public String uploadMedia(MultipartFile file) throws IOException {
-        String contentType = file.getContentType();
+    public UploadMediaResponse uploadMedia(MultipartFile file) throws IOException {
+        var type = checkFile(file);
 
-        if (contentType != null && contentType.startsWith("image/")) {
-            return uploadImage(file);
-        }
-        if (contentType != null && contentType.startsWith("video/")) {
-            return uploadVideo(file);
-        }
-        throw new IllegalArgumentException("Only image or video files are allowed");
+        String url = (type == com.nhom6.motofix.enums.MediaType.IMAGE)
+                ? uploadImage(file)
+                : uploadVideo(file);
+
+        return new UploadMediaResponse(url, type);
     }
 
-    public List<String> uploadMedia(List<MultipartFile> files) throws IOException {
+    public List<UploadMediaResponse> uploadMedia(List<MultipartFile> files) throws IOException {
         if (files == null || files.isEmpty()) {
             throw new IllegalArgumentException("No files provided");
         }
@@ -71,17 +70,43 @@ public class SupabaseStorageService {
             throw new IllegalArgumentException("Too many files (max " + MAX_FILES + ")");
         }
 
-        List<String> urls = new ArrayList<>();
+        // Check hết trước, file nào sai thì từ chối cả lô, khỏi upload dở dang
+        files.forEach(this::checkFile);
+
+        List<UploadMediaResponse> results = new ArrayList<>();
         for (MultipartFile file : files) {
-            urls.add(uploadMedia(file));
+            results.add(uploadMedia(file));
         }
-        return urls;
+        return results;
+    }
+
+    /**
+     * Xác định type (IMAGE/VIDEO) và validate size, content type, đuôi file.
+     * Chưa upload gì cả.
+     */
+    private com.nhom6.motofix.enums.MediaType checkFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("File is empty");
+        }
+
+        String contentType = file.getContentType();
+        String extension = getFileExtension(file.getOriginalFilename());
+
+        if (contentType != null && contentType.startsWith("image/")) {
+            validate(file, MAX_IMAGE_SIZE, "image/");
+            getImageMediaType(extension); // ném lỗi nếu đuôi không hỗ trợ
+            return com.nhom6.motofix.enums.MediaType.IMAGE;
+        }
+        if (contentType != null && contentType.startsWith("video/")) {
+            validate(file, MAX_VIDEO_SIZE, "video/");
+            getVideoMediaType(extension);
+            return com.nhom6.motofix.enums.MediaType.VIDEO;
+        }
+        throw new IllegalArgumentException("Only image or video files are allowed");
     }
 
     private String upload(MultipartFile file, String bucket, String extension, MediaType mediaType)
             throws IOException {
-
-        // Tên file lưu trên Supabase, dùng lại đúng tên này để trả về URL
         String storedName = UUID.randomUUID() + extension;
 
         String uploadUrl = String.format(

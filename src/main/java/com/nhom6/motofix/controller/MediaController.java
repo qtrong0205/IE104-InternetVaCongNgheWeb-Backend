@@ -20,8 +20,8 @@ public class MediaController {
     private final SupabaseStorageService storageService;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public UploadMediaResponse upload(@RequestPart("files") List<MultipartFile> files)
+    public List<UploadMediaResponse> upload(@RequestPart("files") List<MultipartFile> files)
             throws IOException {
-        return new UploadMediaResponse(storageService.uploadMedia(files));
+        return storageService.uploadMedia(files);
     }
 }

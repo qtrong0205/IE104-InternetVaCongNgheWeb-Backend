@@ -1,5 +1,5 @@
 package com.nhom6.motofix.dto.respond;
 
-import java.util.List;
+import com.nhom6.motofix.enums.MediaType;
 
-public record UploadMediaResponse(List<String> urls) {}
+public record UploadMediaResponse(String url, MediaType type) {}
