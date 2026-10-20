@@ -5,7 +5,6 @@ import com.nhom6.motofix.dto.respond.BookingResponse;
 import com.nhom6.motofix.entity.BookingMedia;
 import com.nhom6.motofix.exception.ResourceNotFoundException;
 import com.nhom6.motofix.mapper.BookingMapper;
-import com.nhom6.motofix.repository.BookingMediaRepository;
 import com.nhom6.motofix.repository.BookingRepository;
 import com.nhom6.motofix.repository.UserRepository;
 import jakarta.transaction.Transactional;
