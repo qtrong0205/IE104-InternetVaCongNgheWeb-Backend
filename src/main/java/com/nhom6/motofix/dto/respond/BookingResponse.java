@@ -10,10 +10,10 @@ public record BookingResponse(
         UUID id,
         BookingStatus status,
         String problemDescription,
-        List<String> mediaUrls,
+        List<UploadMediaResponse> media,
         Double latitude,
         Double longitude,
         LocalDateTime createdAt,
-        UUID providerId
+        UUID customerId
 ) {
 }

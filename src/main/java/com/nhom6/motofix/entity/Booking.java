@@ -26,9 +26,6 @@ public class Booking {
     @Column(name = "problem_description", nullable = false, columnDefinition = "TEXT")
     private String problemDescription;
 
-    @Column(name = "media_urls")
-    private List<String> mediaUrls = new ArrayList<>();
-
     @Column(nullable = false)
     private Double latitude;
 
@@ -56,8 +53,16 @@ public class Booking {
     @OneToMany(mappedBy = "booking", fetch = FetchType.LAZY)
     private List<RepairQuote> quotes = new ArrayList<>();
 
+    @OneToMany(mappedBy = "booking", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<BookingMedia> media = new ArrayList<>();
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+    }
+
+    public void addMedia(BookingMedia m) {
+        media.add(m);
+        m.setBooking(this);
     }
 }

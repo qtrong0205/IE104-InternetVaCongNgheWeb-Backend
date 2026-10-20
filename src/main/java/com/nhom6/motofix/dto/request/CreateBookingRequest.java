@@ -1,5 +1,6 @@
 package com.nhom6.motofix.dto.request;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 
 import java.util.List;
@@ -10,7 +11,7 @@ public record CreateBookingRequest(
         String problemDescription,
 
         @Size(max = 10)
-        List<@NotBlank String> mediaUrls,
+        List<@NotNull @Valid MediaRequest> media,
 
         @NotNull @DecimalMin("-90.0") @DecimalMax("90.0")
         Double latitude,

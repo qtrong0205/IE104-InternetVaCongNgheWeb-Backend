@@ -2,14 +2,14 @@ package com.nhom6.motofix.service;
 
 import com.nhom6.motofix.dto.request.CreateBookingRequest;
 import com.nhom6.motofix.dto.respond.BookingResponse;
+import com.nhom6.motofix.entity.BookingMedia;
 import com.nhom6.motofix.exception.ResourceNotFoundException;
 import com.nhom6.motofix.mapper.BookingMapper;
+import com.nhom6.motofix.repository.BookingMediaRepository;
 import com.nhom6.motofix.repository.BookingRepository;
 import com.nhom6.motofix.repository.UserRepository;
-import com.nhom6.motofix.security.JwtService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
@@ -29,8 +29,16 @@ public class BookingService {
         var booking = bookingMapper.toBooking(request);
         booking.setCustomer(user);
 
-        bookingRepository.save(booking);
+        if (request.media() != null) {
+            request.media().forEach(item -> {
+                var media = new BookingMedia();
+                media.setUrl(item.url());
+                media.setType(item.type());
+                booking.addMedia(media);
+            });
+        }
 
-        return bookingMapper.toBookingResponse(booking);
+        var saved = bookingRepository.save(booking);
+        return bookingMapper.toBookingResponse(saved);
     }
 }
