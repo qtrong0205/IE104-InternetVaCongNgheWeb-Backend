@@ -1,6 +1,7 @@
 package com.nhom6.motofix.controller;
 
 import com.nhom6.motofix.dto.request.ProviderProfileRequest;
+import com.nhom6.motofix.dto.respond.IncomingOfferResponse;
 import com.nhom6.motofix.dto.respond.ProviderProfileResponse;
 import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.service.ProviderService;
@@ -10,6 +11,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/providers")
@@ -25,5 +28,14 @@ public class ProviderController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(providerService.uploadProfile(user, request));
+    }
+
+    @GetMapping("/incoming-offers")
+    public ResponseEntity<List<IncomingOfferResponse>> getIncomingOffers(
+            @AuthenticationPrincipal User user
+    ){
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(providerService.getIncomingOffers(user));
     }
 }
