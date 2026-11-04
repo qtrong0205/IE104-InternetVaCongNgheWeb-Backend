@@ -23,6 +23,8 @@ public interface ProviderProfileRepository extends JpaRepository<ProviderProfile
     @Query("SELECT p.id FROM ProviderProfile p WHERE p.user.id = :userId")
     Optional<UUID> findIdByUserId(@Param("userId") UUID userId);
 
+    Optional<ProviderProfile> findByUserId(@Param("userId") UUID userId);
+
     @Query(value = """
         SELECT p.id AS id,
                extensions.ST_Distance(p.location, pt.g) AS "distanceM"
