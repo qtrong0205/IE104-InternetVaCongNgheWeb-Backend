@@ -60,7 +60,7 @@ public class BookingController {
     }
 
     @GetMapping("/{id}/offers")
-    @PreAuthorize("hasRole('CUSTOMER')")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'USER')")
     public ResponseEntity<List<BookingOfferSummaryResponse>> getOffers(
             @PathVariable UUID id,
             @AuthenticationPrincipal User user
@@ -69,7 +69,7 @@ public class BookingController {
     }
 
     @PostMapping("/{id}/offers/{offerId}/select")
-    @PreAuthorize("hasRole('CUSTOMER')")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'USER')")
     public ResponseEntity<BookingResponse> selectOffer(
             @PathVariable UUID id,
             @PathVariable UUID offerId,

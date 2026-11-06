@@ -155,7 +155,7 @@ public class BookingService {
         }
 
         booking.setProvider(offer.getProvider());
-        booking.setStatus(BookingStatus.SELECTED_PROVIDER);
+        booking.setStatus(BookingStatus.PROVIDER_SELECTED);
         Booking saved = bookingRepository.save(booking);
 
         // Expire all other offers (PENDING, ACCEPTED)

@@ -16,6 +16,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -67,9 +69,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 if (user != null && jwtService.isTokenValid(token, user)) {
 
                     // Thêm tiền tố "ROLE_" vào tên Role để khớp với chuẩn phân quyền của Spring Security (ví dụ: USER -> ROLE_USER)
-                    var authorities = user.getRoles().stream()
-                            .map(role -> new SimpleGrantedAuthority("ROLE_" + role.getName()))
-                            .toList();
+                    // Hỗ trợ cả USER và CUSTOMER tương đương nhau theo requirement
+                    List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+                    for (var role : user.getRoles()) {
+                        String rName = role.getName();
+                        authorities.add(new SimpleGrantedAuthority("ROLE_" + rName));
+                        if ("USER".equalsIgnoreCase(rName)) {
+                            authorities.add(new SimpleGrantedAuthority("ROLE_CUSTOMER"));
+                        } else if ("CUSTOMER".equalsIgnoreCase(rName)) {
+                            authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
+                        }
+                    }
 
                     // Khởi tạo đối tượng xác thực cho Spring Security
                     var authentication = new UsernamePasswordAuthenticationToken(
