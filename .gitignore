@@ -31,3 +31,13 @@ build/
 
 ### VS Code ###
 .vscode/
+
+
+# Environment variables
+.env
+
+# Interface Test
+GiaoDienTest.html
+
+# Requirement
+RequirementChiTiet.md
