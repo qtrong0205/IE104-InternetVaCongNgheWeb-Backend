@@ -17,6 +17,30 @@ public interface BookingOfferRepository extends JpaRepository<BookingOffer, UUID
 
     Optional<BookingOffer> findByIdAndProvider_Id(UUID id, UUID providerId);
 
+    @Query("""
+        SELECT o FROM BookingOffer o
+        JOIN FETCH o.provider p
+        JOIN FETCH p.user u
+        WHERE o.booking.id = :bookingId AND o.status = :status
+        ORDER BY o.createdAt DESC
+        """)
+    List<BookingOffer> findByBookingIdAndStatusWithProvider(
+            @Param("bookingId") UUID bookingId,
+            @Param("status") OfferStatus status);
+
+    @Modifying
+    @Query("""
+        UPDATE BookingOffer o SET o.status = :expiredStatus
+        WHERE o.booking.id = :bookingId
+          AND o.id <> :selectedOfferId
+          AND o.status IN (:activeStatuses)
+        """)
+    int expireRemainingOffers(
+            @Param("bookingId") UUID bookingId,
+            @Param("selectedOfferId") UUID selectedOfferId,
+            @Param("expiredStatus") OfferStatus expiredStatus,
+            @Param("activeStatuses") List<OfferStatus> activeStatuses);
+
     // Set status cho các offers hết hạn
     @Modifying
     @Query("""

@@ -14,6 +14,7 @@ public record BookingResponse(
         Double latitude,
         Double longitude,
         LocalDateTime createdAt,
-        UUID customerId
+        UUID customerId,
+        UUID providerId
 ) {
 }

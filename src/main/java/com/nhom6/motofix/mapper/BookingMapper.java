@@ -22,6 +22,7 @@ public interface BookingMapper {
     Booking toBooking(CreateBookingRequest request);
 
     @Mapping(target = "customerId", source = "customer.id")
+    @Mapping(target = "providerId", source = "provider.id")
     BookingResponse toBookingResponse(Booking booking);
 
     UploadMediaResponse toUploadMediaResponse(BookingMedia media);
