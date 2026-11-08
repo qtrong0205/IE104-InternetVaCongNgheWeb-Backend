@@ -1,6 +1,7 @@
 package com.nhom6.motofix.controller;
 
 import com.nhom6.motofix.dto.request.AcceptOfferRequest;
+import com.nhom6.motofix.dto.request.CancelBookingRequest;
 import com.nhom6.motofix.dto.request.CreateBookingRequest;
 import com.nhom6.motofix.dto.request.CreateQuoteRequest;
 import com.nhom6.motofix.dto.request.DeclineOfferRequest;
@@ -110,5 +111,90 @@ public class BookingController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(quoteService.createInitialQuote(id, request, user));
+    }
+
+    /**
+     * API 1: CUSTOMER chấp nhận báo giá chẩn đoán.
+     * POST /api/bookings/{id}/quotes/{quoteId}/accept
+     */
+    @PostMapping("/{id}/quotes/{quoteId}/accept")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'USER')")
+    public ResponseEntity<QuoteResponse> acceptQuote(
+            @PathVariable UUID id,
+            @PathVariable UUID quoteId,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(quoteService.acceptQuote(id, quoteId, user));
+    }
+
+    /**
+     * API 2: CUSTOMER hoặc PROVIDER hủy đơn đặt sửa chữa.
+     * POST /api/bookings/{id}/cancel
+     */
+    @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'USER', 'PROVIDER')")
+    public ResponseEntity<BookingResponse> cancelBooking(
+            @PathVariable UUID id,
+            @RequestBody(required = false) CancelBookingRequest request,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(bookingService.cancelBooking(id, request, user));
+    }
+
+    /**
+     * API: PROVIDER gửi báo giá chẩn đoán đã điều chỉnh (version mới).
+     * POST /api/bookings/{id}/quotes/revise
+     * Backend tự xác định quote cần xử lý theo trạng thái database.
+     */
+    @PostMapping("/{id}/quotes/revise")
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ResponseEntity<QuoteResponse> reviseQuote(
+            @PathVariable UUID id,
+            @Valid @RequestBody CreateQuoteRequest request,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(quoteService.reviseQuote(id, request, user));
+    }
+
+    /**
+     * API: Xem danh sách các phiên bản chẩn đoán của booking.
+     * GET /api/bookings/{id}/quotes
+     */
+    @GetMapping("/{id}/quotes")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'USER', 'PROVIDER')")
+    public ResponseEntity<List<QuoteResponse>> getQuotes(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(quoteService.getQuotesForBooking(id, user));
+    }
+
+    /**
+     * API: Xem chi tiết một phiên bản chẩn đoán.
+     * GET /api/bookings/{id}/quotes/{quoteId}
+     */
+    @GetMapping("/{id}/quotes/{quoteId}")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'USER', 'PROVIDER')")
+    public ResponseEntity<QuoteResponse> getQuoteDetails(
+            @PathVariable UUID id,
+            @PathVariable UUID quoteId,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(quoteService.getQuoteDetails(id, quoteId, user));
+    }
+
+    /**
+     * API: PROVIDER hủy phiên bản báo giá PENDING đang chờ duyệt, quay về bản ACCEPTED gần nhất.
+     * POST /api/bookings/{id}/quotes/rollback
+     */
+    @PostMapping("/{id}/quotes/rollback")
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ResponseEntity<QuoteResponse> rollbackQuote(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(quoteService.rollbackQuote(id, user));
     }
 }
