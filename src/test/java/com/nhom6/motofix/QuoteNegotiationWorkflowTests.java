@@ -566,4 +566,151 @@ class QuoteNegotiationWorkflowTests {
                 quoteService.getQuotesForBooking(booking.getId(), otherUser)
         );
     }
+
+    // ==========================================
+    // 5. API ROLLBACK QUOTE TESTS
+    // ==========================================
+
+    @Test
+    @DisplayName("STT 1, 10, 11, 12: Rollback hợp lệ -> PENDING thành CANCELLED, trả về ACCEPTED cũ, không tạo quote mới, booking vẫn IN_PROGRESS")
+    void testRollbackQuote_Success() {
+        booking.setStatus(BookingStatus.IN_PROGRESS);
+        booking = bookingRepository.save(booking);
+
+        RepairQuote quoteV1 = createTestQuote(booking, 1, QuoteStatus.ACCEPTED);
+        RepairQuote quoteV2 = createTestQuote(booking, 2, QuoteStatus.PENDING);
+
+        int countBefore = quoteRepository.findByBookingIdOrderByVersionAsc(booking.getId()).size();
+
+        QuoteResponse res = quoteService.rollbackQuote(booking.getId(), providerUser);
+
+        // STT 1: Thành công, trả về phiên bản ACCEPTED
+        assertNotNull(res);
+        assertEquals(quoteV1.getId(), res.id());
+        assertEquals(QuoteStatus.ACCEPTED, res.status());
+        assertEquals(1, res.version());
+
+        // PENDING cũ chuyển thành CANCELLED
+        RepairQuote reloadedV2 = quoteRepository.findById(quoteV2.getId()).orElseThrow();
+        assertEquals(QuoteStatus.CANCELLED, reloadedV2.getStatus());
+
+        // STT 10: Quote ACCEPTED không đổi
+        RepairQuote reloadedV1 = quoteRepository.findById(quoteV1.getId()).orElseThrow();
+        assertEquals(QuoteStatus.ACCEPTED, reloadedV1.getStatus());
+        assertEquals(1, reloadedV1.getItems().size());
+        assertEquals(QuoteItemStatus.ACCEPTED, reloadedV1.getItems().get(0).getStatus());
+
+        // STT 11: Không tạo quote mới, tổng số quote không đổi
+        int countAfter = quoteRepository.findByBookingIdOrderByVersionAsc(booking.getId()).size();
+        assertEquals(countBefore, countAfter);
+
+        // STT 12: Booking vẫn IN_PROGRESS
+        Booking reloadedBooking = bookingRepository.findById(booking.getId()).orElseThrow();
+        assertEquals(BookingStatus.IN_PROGRESS, reloadedBooking.getStatus());
+    }
+
+    @Test
+    @DisplayName("STT 2: Rollback khi không có quote PENDING -> 409 Conflict")
+    void testRollbackQuote_Conflict_WhenNoPending() {
+        booking.setStatus(BookingStatus.IN_PROGRESS);
+        booking = bookingRepository.save(booking);
+        createTestQuote(booking, 1, QuoteStatus.ACCEPTED);
+
+        assertThrows(ConflictException.class, () ->
+                quoteService.rollbackQuote(booking.getId(), providerUser)
+        );
+    }
+
+    @Test
+    @DisplayName("STT 3: Rollback khi không có quote ACCEPTED -> 409 Conflict")
+    void testRollbackQuote_Conflict_WhenNoAccepted() {
+        booking.setStatus(BookingStatus.IN_PROGRESS);
+        booking = bookingRepository.save(booking);
+        createTestQuote(booking, 1, QuoteStatus.PENDING);
+
+        assertThrows(ConflictException.class, () ->
+                quoteService.rollbackQuote(booking.getId(), providerUser)
+        );
+    }
+
+    @Test
+    @DisplayName("STT 4: Rollback khi Booking không tồn tại -> 404 ResourceNotFoundException")
+    void testRollbackQuote_NotFound_WhenBookingDoesNotExist() {
+        assertThrows(com.nhom6.motofix.exception.ResourceNotFoundException.class, () ->
+                quoteService.rollbackQuote(UUID.randomUUID(), providerUser)
+        );
+    }
+
+    @Test
+    @DisplayName("STT 5: Rollback khi Booking không ở trạng thái IN_PROGRESS -> 409 Conflict")
+    void testRollbackQuote_Conflict_WhenBookingNotInProgress() {
+        // booking đang ở INSPECTING
+        createTestQuote(booking, 1, QuoteStatus.ACCEPTED);
+        createTestQuote(booking, 2, QuoteStatus.PENDING);
+
+        assertThrows(ConflictException.class, () ->
+                quoteService.rollbackQuote(booking.getId(), providerUser)
+        );
+
+        booking.setStatus(BookingStatus.CANCELLED);
+        bookingRepository.save(booking);
+
+        assertThrows(ConflictException.class, () ->
+                quoteService.rollbackQuote(booking.getId(), providerUser)
+        );
+    }
+
+    @Test
+    @DisplayName("STT 6: Customer gọi rollback -> 403 Forbidden")
+    void testRollbackQuote_Forbidden_WhenCustomer() {
+        booking.setStatus(BookingStatus.IN_PROGRESS);
+        booking = bookingRepository.save(booking);
+        createTestQuote(booking, 1, QuoteStatus.ACCEPTED);
+        createTestQuote(booking, 2, QuoteStatus.PENDING);
+
+        assertThrows(AccessDeniedException.class, () ->
+                quoteService.rollbackQuote(booking.getId(), customer)
+        );
+    }
+
+    @Test
+    @DisplayName("STT 7: Provider không được phân công gọi rollback -> 403 Forbidden")
+    void testRollbackQuote_Forbidden_WhenNotAssignedProvider() {
+        booking.setStatus(BookingStatus.IN_PROGRESS);
+        booking = bookingRepository.save(booking);
+        createTestQuote(booking, 1, QuoteStatus.ACCEPTED);
+        createTestQuote(booking, 2, QuoteStatus.PENDING);
+
+        assertThrows(AccessDeniedException.class, () ->
+                quoteService.rollbackQuote(booking.getId(), otherUser)
+        );
+    }
+
+    @Test
+    @DisplayName("STT 8: Rollback khi có nhiều hơn 1 quote PENDING bất thường -> 409 Conflict")
+    void testRollbackQuote_Conflict_WhenMultiplePending() {
+        booking.setStatus(BookingStatus.IN_PROGRESS);
+        booking = bookingRepository.save(booking);
+        createTestQuote(booking, 1, QuoteStatus.ACCEPTED);
+        createTestQuote(booking, 2, QuoteStatus.PENDING);
+        createTestQuote(booking, 3, QuoteStatus.PENDING);
+
+        assertThrows(ConflictException.class, () ->
+                quoteService.rollbackQuote(booking.getId(), providerUser)
+        );
+    }
+
+    @Test
+    @DisplayName("STT 9: Rollback khi có nhiều hơn 1 quote ACCEPTED bất thường -> 409 Conflict")
+    void testRollbackQuote_Conflict_WhenMultipleAccepted() {
+        booking.setStatus(BookingStatus.IN_PROGRESS);
+        booking = bookingRepository.save(booking);
+        createTestQuote(booking, 1, QuoteStatus.ACCEPTED);
+        createTestQuote(booking, 2, QuoteStatus.ACCEPTED);
+        createTestQuote(booking, 3, QuoteStatus.PENDING);
+
+        assertThrows(ConflictException.class, () ->
+                quoteService.rollbackQuote(booking.getId(), providerUser)
+        );
+    }
 }
