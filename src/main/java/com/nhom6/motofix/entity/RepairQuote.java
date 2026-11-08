@@ -9,6 +9,8 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -22,41 +24,45 @@ public class RepairQuote {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false, columnDefinition = "TEXT")
-    private String description;
-
-    @Column(name = "labor_cost", nullable = false, precision = 12, scale = 0)
-    private BigDecimal laborCost = BigDecimal.ZERO;
-
-    @Column(name = "parts_cost", nullable = false, precision = 12, scale = 0)
-    private BigDecimal partsCost = BigDecimal.ZERO;
-
-    @Column(name = "total_amount", nullable = false, precision = 12, scale = 0)
-    private BigDecimal totalAmount = BigDecimal.ZERO;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private QuoteStatus status = QuoteStatus.PENDING_CUSTOMER;
-
-    @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt;
-
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "booking_id", nullable = false)
     private Booking booking;
 
+    @Column(nullable = false)
+    private Integer version = 1;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "based_on_quote_id")
+    private RepairQuote basedOnQuote;
+
+    @Column(name = "diagnosis_note", columnDefinition = "TEXT")
+    private String diagnosisNote;
+
+    @Column(name = "total_amount", nullable = false, precision = 12, scale = 2)
+    private BigDecimal totalAmount = BigDecimal.ZERO;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private QuoteStatus status = QuoteStatus.PENDING;
+
+    @Column(name = "created_at", nullable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "responded_at")
+    private LocalDateTime respondedAt;
+
+    @OneToMany(mappedBy = "quote", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<RepairQuoteItem> items = new ArrayList<>();
+
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now();
-        calculateTotal();
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
     }
 
-    @PreUpdate
-    protected void onUpdate() {
-        calculateTotal();
-    }
-
-    private void calculateTotal() {
-        this.totalAmount = laborCost.add(partsCost);
+    public void addItem(RepairQuoteItem item) {
+        items.add(item);
+        item.setQuote(this);
     }
 }

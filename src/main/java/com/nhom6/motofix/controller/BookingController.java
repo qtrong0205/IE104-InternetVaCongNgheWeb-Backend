@@ -2,13 +2,16 @@ package com.nhom6.motofix.controller;
 
 import com.nhom6.motofix.dto.request.AcceptOfferRequest;
 import com.nhom6.motofix.dto.request.CreateBookingRequest;
+import com.nhom6.motofix.dto.request.CreateQuoteRequest;
 import com.nhom6.motofix.dto.request.DeclineOfferRequest;
 import com.nhom6.motofix.dto.respond.BookingOfferSummaryResponse;
 import com.nhom6.motofix.dto.respond.BookingResponse;
 import com.nhom6.motofix.dto.respond.OfferResultResponse;
+import com.nhom6.motofix.dto.respond.QuoteResponse;
 import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.service.BookingService;
 import com.nhom6.motofix.service.OfferService;
+import com.nhom6.motofix.service.QuoteService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -26,6 +29,7 @@ import java.util.UUID;
 public class BookingController {
     private final BookingService bookingService;
     private final OfferService offerService;
+    private final QuoteService quoteService;
 
     @PostMapping
     public ResponseEntity<BookingResponse> createBooking(
@@ -76,5 +80,35 @@ public class BookingController {
             @AuthenticationPrincipal User user
     ) {
         return ResponseEntity.ok(bookingService.selectOffer(id, offerId, user.getId()));
+    }
+
+    @PatchMapping("/{id}/en-route")
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ResponseEntity<BookingResponse> confirmEnRoute(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(bookingService.confirmEnRoute(id, user));
+    }
+
+    @PatchMapping("/{id}/arrived")
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ResponseEntity<BookingResponse> confirmArrived(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(bookingService.confirmArrived(id, user));
+    }
+
+    @PostMapping("/{id}/quotes")
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ResponseEntity<QuoteResponse> createInitialQuote(
+            @PathVariable UUID id,
+            @Valid @RequestBody CreateQuoteRequest request,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(quoteService.createInitialQuote(id, request, user));
     }
 }

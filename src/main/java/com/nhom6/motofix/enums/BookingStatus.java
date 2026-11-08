@@ -2,9 +2,13 @@ package com.nhom6.motofix.enums;
 
 public enum BookingStatus {
     SEARCHING,
+    SELECTED_PROVIDER,
     PROVIDER_SELECTED,
+    PROVIDER_EN_ROUTE,
     INSPECTING,
     AWAITING_QUOTE_APPROVAL,
     IN_PROGRESS,
-    COMPLETED;
+    WAITING_PAYMENT,
+    COMPLETED,
+    CANCELLED;
 }
