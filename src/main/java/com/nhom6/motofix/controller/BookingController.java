@@ -184,4 +184,17 @@ public class BookingController {
     ) {
         return ResponseEntity.ok(quoteService.getQuoteDetails(id, quoteId, user));
     }
+
+    /**
+     * API: PROVIDER hủy phiên bản báo giá PENDING đang chờ duyệt, quay về bản ACCEPTED gần nhất.
+     * POST /api/bookings/{id}/quotes/rollback
+     */
+    @PostMapping("/{id}/quotes/rollback")
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ResponseEntity<QuoteResponse> rollbackQuote(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(quoteService.rollbackQuote(id, user));
+    }
 }

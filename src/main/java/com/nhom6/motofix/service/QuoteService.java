@@ -276,6 +276,68 @@ public class QuoteService {
     }
 
     /**
+     * Provider thực hiện rollback: Hủy phiên bản báo giá PENDING đang chờ duyệt
+     * và quay lại sử dụng phiên bản ACCEPTED gần nhất.
+     * Endpoint: POST /api/bookings/{id}/quotes/rollback
+     * Điều kiện:
+     * - Chỉ PROVIDER được phân công của booking mới được thao tác.
+     * - Booking phải ở trạng thái IN_PROGRESS.
+     * - Booking phải có đúng 1 quote PENDING và đúng 1 quote ACCEPTED.
+     * - Quote PENDING chuyển thành CANCELLED.
+     * - Quote ACCEPTED giữ nguyên, trả về QuoteResponse của phiên bản ACCEPTED này.
+     */
+    @Transactional
+    public QuoteResponse rollbackQuote(UUID bookingId, User user) {
+        // Khóa bi quan (pessimistic lock) trên Booking để tránh xung đột đồng thời với revise hoặc accept
+        Booking booking = bookingRepository.findByIdWithLock(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+
+        // Kiểm tra quyền sở hữu: Chỉ provider được phân công của booking mới được thao tác
+        if (booking.getProvider() == null ||
+                booking.getProvider().getUser() == null ||
+                !booking.getProvider().getUser().getId().equals(user.getId())) {
+            throw new AccessDeniedException("You are not the assigned provider for this booking");
+        }
+
+        // Kiểm tra trạng thái Booking: Bắt buộc phải là IN_PROGRESS
+        if (booking.getStatus() != BookingStatus.IN_PROGRESS) {
+            throw new ConflictException("Booking status must be IN_PROGRESS to rollback quote, but was: " + booking.getStatus());
+        }
+
+        // Kiểm tra tính bất thường và số lượng quote PENDING
+        List<RepairQuote> pendingQuotes = quoteRepository.findByBookingIdAndStatus(bookingId, QuoteStatus.PENDING);
+        if (pendingQuotes.size() > 1) {
+            throw new ConflictException("Abnormal quote state: multiple PENDING quotes found for booking " + bookingId);
+        }
+        if (pendingQuotes.isEmpty()) {
+            throw new ConflictException("No PENDING quote found to rollback for booking " + bookingId);
+        }
+
+        // Kiểm tra tính bất thường và số lượng quote ACCEPTED
+        List<RepairQuote> acceptedQuotes = quoteRepository.findByBookingIdAndStatus(bookingId, QuoteStatus.ACCEPTED);
+        if (acceptedQuotes.size() > 1) {
+            throw new ConflictException("Abnormal quote state: multiple ACCEPTED quotes found for booking " + bookingId);
+        }
+        if (acceptedQuotes.isEmpty()) {
+            throw new ConflictException("No ACCEPTED quote found to revert to for booking " + bookingId);
+        }
+
+        RepairQuote pendingQuote = pendingQuotes.get(0);
+        RepairQuote acceptedQuote = acceptedQuotes.get(0);
+
+        // Chuyển quote PENDING hiện tại thành CANCELLED
+        pendingQuote.setStatus(QuoteStatus.CANCELLED);
+        quoteRepository.save(pendingQuote);
+
+        log.info("Provider {} rolled back quote {} (v{}) for booking {}, reverted to active accepted quote {} (v{})",
+                user.getId(), pendingQuote.getId(), pendingQuote.getVersion(),
+                bookingId, acceptedQuote.getId(), acceptedQuote.getVersion());
+
+        // Trả về DTO của phiên bản ACCEPTED tiếp tục có hiệu lực
+        return QuoteResponse.from(acceptedQuote);
+    }
+
+    /**
      * Lấy danh sách các phiên bản chẩn đoán của booking (theo thứ tự version tăng dần).
      * Endpoint: GET /api/bookings/{id}/quotes
      */
