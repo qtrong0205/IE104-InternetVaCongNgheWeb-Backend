@@ -31,6 +31,10 @@ public class QuoteService {
     private final BookingRepository bookingRepository;
     private final RepairQuoteRepository quoteRepository;
 
+    /**
+     * Provider tạo báo giá chẩn đoán phiên bản đầu tiên (version 1).
+     * Yêu cầu: Provider được giao đơn, Booking ở trạng thái INSPECTING, chưa có quote v1.
+     */
     @Transactional
     public QuoteResponse createInitialQuote(UUID bookingId, CreateQuoteRequest request, User user) {
         Booking booking = bookingRepository.findByIdWithLock(bookingId)
@@ -84,6 +88,162 @@ public class QuoteService {
         log.info("Provider {} created quote v1 for booking {}, total amount: {}", user.getId(), bookingId, totalAmount);
 
         return QuoteResponse.from(saved);
+    }
+
+    /**
+     * Customer chấp nhận một chẩn đoán / báo giá.
+     * Quy tắc:
+     * - Chỉ Customer sở hữu booking mới được chấp nhận.
+     * - Booking phải ở trạng thái INSPECTING hoặc IN_PROGRESS.
+     * - Quote phải thuộc về booking và đang ở trạng thái PENDING.
+     * - Báo giá cũ đã ACCEPTED (nếu có) sẽ được chuyển sang SUPERSEDED.
+     * - Quote được chấp nhận chuyển sang ACCEPTED, các item chuyển sang ACCEPTED.
+     * - Nếu Booking đang ở INSPECTING, chuyển sang IN_PROGRESS.
+     */
+    @Transactional
+    public QuoteResponse acceptQuote(UUID bookingId, UUID quoteId, User user) {
+        // Khóa pessimistic lock trên Booking để tránh xung đột đồng thời
+        Booking booking = bookingRepository.findByIdWithLock(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+
+        // Kiểm tra quyền sở hữu: Phải là khách hàng tạo booking
+        if (booking.getCustomer() == null || !booking.getCustomer().getId().equals(user.getId())) {
+            throw new AccessDeniedException("You are not the customer of this booking");
+        }
+
+        // Kiểm tra trạng thái Booking: Phải là INSPECTING hoặc IN_PROGRESS
+        if (booking.getStatus() != BookingStatus.INSPECTING && booking.getStatus() != BookingStatus.IN_PROGRESS) {
+            throw new ConflictException("Booking status must be INSPECTING or IN_PROGRESS to accept quote, but was: " + booking.getStatus());
+        }
+
+        // Kiểm tra sự tồn tại của Quote
+        RepairQuote quote = quoteRepository.findById(quoteId)
+                .orElseThrow(() -> new ResourceNotFoundException("Quote not found"));
+
+        // Kiểm tra Quote có thuộc về Booking không
+        if (!quote.getBooking().getId().equals(bookingId)) {
+            throw new ConflictException("Quote does not belong to this booking");
+        }
+
+        // Chỉ chấp nhận quote đang ở trạng thái PENDING
+        if (quote.getStatus() != QuoteStatus.PENDING) {
+            throw new ConflictException("Only PENDING quotes can be accepted. Current status: " + quote.getStatus());
+        }
+
+        // Nếu trước đó đã có quote ACCEPTED (trong trường hợp revise khi đang IN_PROGRESS), chuyển sang SUPERSEDED
+        var existingAcceptedQuotes = quoteRepository.findByBookingIdAndStatus(bookingId, QuoteStatus.ACCEPTED);
+        for (RepairQuote prevAccepted : existingAcceptedQuotes) {
+            if (!prevAccepted.getId().equals(quoteId)) {
+                prevAccepted.setStatus(QuoteStatus.SUPERSEDED);
+                quoteRepository.save(prevAccepted);
+                log.info("Superseded previous quote {} for booking {}", prevAccepted.getId(), bookingId);
+            }
+        }
+
+        // Cập nhật trạng thái quote sang ACCEPTED
+        quote.setStatus(QuoteStatus.ACCEPTED);
+        quote.setRespondedAt(LocalDateTime.now());
+
+        // Cập nhật tất cả các item trong quote sang ACCEPTED
+        if (quote.getItems() != null) {
+            for (RepairQuoteItem item : quote.getItems()) {
+                item.setStatus(QuoteItemStatus.ACCEPTED);
+            }
+        }
+
+        // Nếu booking đang ở INSPECTING thì chuyển sang IN_PROGRESS
+        if (booking.getStatus() == BookingStatus.INSPECTING) {
+            booking.setStatus(BookingStatus.IN_PROGRESS);
+            bookingRepository.save(booking);
+            log.info("Booking {} transitioned from INSPECTING to IN_PROGRESS upon quote acceptance", bookingId);
+        }
+
+        RepairQuote savedQuote = quoteRepository.save(quote);
+        log.info("Customer {} accepted quote {} for booking {}", user.getId(), quoteId, bookingId);
+
+        return QuoteResponse.from(savedQuote);
+    }
+
+    /**
+     * Provider chỉnh sửa lại chẩn đoán / báo giá (tạo version mới).
+     * Quy tắc:
+     * - Chỉ Provider được phân công cho booking mới được thao tác.
+     * - Booking phải ở trạng thái INSPECTING hoặc IN_PROGRESS.
+     * - Quote gốc (quoteId) phải thuộc về booking.
+     * - Nếu quote gốc đang ở trạng thái PENDING thì chuyển sang SUPERSEDED.
+     * - Version mới = version cao nhất hiện tại + 1.
+     * - based_on_quote_id trỏ về quoteId gốc.
+     * - Trạng thái quote mới là PENDING, các item bắt đầu với PENDING.
+     */
+    @Transactional
+    public QuoteResponse reviseQuote(UUID bookingId, UUID quoteId, CreateQuoteRequest request, User user) {
+        // Khóa pessimistic lock trên Booking để tránh xung đột đồng thời
+        Booking booking = bookingRepository.findByIdWithLock(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+
+        // Kiểm tra quyền sở hữu: Chỉ provider được chọn của booking mới được thao tác
+        if (booking.getProvider() == null ||
+                booking.getProvider().getUser() == null ||
+                !booking.getProvider().getUser().getId().equals(user.getId())) {
+            throw new AccessDeniedException("You are not the assigned provider for this booking");
+        }
+
+        // Kiểm tra trạng thái Booking: Phải là INSPECTING hoặc IN_PROGRESS
+        if (booking.getStatus() != BookingStatus.INSPECTING && booking.getStatus() != BookingStatus.IN_PROGRESS) {
+            throw new ConflictException("Booking status must be INSPECTING or IN_PROGRESS to revise quote, but was: " + booking.getStatus());
+        }
+
+        // Kiểm tra sự tồn tại của Quote gốc cần sửa
+        RepairQuote basedQuote = quoteRepository.findById(quoteId)
+                .orElseThrow(() -> new ResourceNotFoundException("Quote to revise not found"));
+
+        // Kiểm tra Quote gốc có thuộc booking này không
+        if (!basedQuote.getBooking().getId().equals(bookingId)) {
+            throw new ConflictException("Quote does not belong to this booking");
+        }
+
+        // Nếu quote gốc đang ở PENDING thì thay thế bằng cách chuyển sang SUPERSEDED
+        if (basedQuote.getStatus() == QuoteStatus.PENDING) {
+            basedQuote.setStatus(QuoteStatus.SUPERSEDED);
+            quoteRepository.save(basedQuote);
+            log.info("Superseded unapproved quote {} by new revised version for booking {}", quoteId, bookingId);
+        }
+
+        // Tính version mới tiếp theo
+        int nextVersion = quoteRepository.findMaxVersionByBookingId(bookingId) + 1;
+
+        RepairQuote revisedQuote = new RepairQuote();
+        revisedQuote.setBooking(booking);
+        revisedQuote.setVersion(nextVersion);
+        revisedQuote.setBasedOnQuote(basedQuote);
+        revisedQuote.setDiagnosisNote(request.diagnosisNote());
+        revisedQuote.setStatus(QuoteStatus.PENDING);
+        revisedQuote.setCreatedAt(LocalDateTime.now());
+
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        for (CreateQuoteItemRequest itemReq : request.items()) {
+            RepairQuoteItem item = new RepairQuoteItem();
+            item.setItemType(itemReq.itemType());
+            item.setName(itemReq.name());
+            item.setQuantity(itemReq.quantity());
+            item.setUnitPrice(itemReq.unitPrice());
+            item.setDescription(itemReq.description());
+
+            BigDecimal itemAmount = itemReq.unitPrice().multiply(BigDecimal.valueOf(itemReq.quantity()));
+            item.setAmount(itemAmount);
+            item.setStatus(QuoteItemStatus.PENDING);
+            item.setCreatedAt(LocalDateTime.now());
+
+            revisedQuote.addItem(item);
+            totalAmount = totalAmount.add(itemAmount);
+        }
+        revisedQuote.setTotalAmount(totalAmount);
+
+        RepairQuote savedQuote = quoteRepository.save(revisedQuote);
+        log.info("Provider {} revised quote (new v{}) for booking {}, based on quote {}",
+                user.getId(), nextVersion, bookingId, quoteId);
+
+        return QuoteResponse.from(savedQuote);
     }
 }
 

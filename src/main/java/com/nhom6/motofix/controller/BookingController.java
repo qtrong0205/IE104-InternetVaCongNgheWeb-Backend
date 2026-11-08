@@ -1,6 +1,7 @@
 package com.nhom6.motofix.controller;
 
 import com.nhom6.motofix.dto.request.AcceptOfferRequest;
+import com.nhom6.motofix.dto.request.CancelBookingRequest;
 import com.nhom6.motofix.dto.request.CreateBookingRequest;
 import com.nhom6.motofix.dto.request.CreateQuoteRequest;
 import com.nhom6.motofix.dto.request.DeclineOfferRequest;
@@ -110,5 +111,50 @@ public class BookingController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(quoteService.createInitialQuote(id, request, user));
+    }
+
+    /**
+     * API 1: CUSTOMER chấp nhận báo giá chẩn đoán.
+     * POST /api/bookings/{id}/quotes/{quoteId}/accept
+     */
+    @PostMapping("/{id}/quotes/{quoteId}/accept")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'USER')")
+    public ResponseEntity<QuoteResponse> acceptQuote(
+            @PathVariable UUID id,
+            @PathVariable UUID quoteId,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(quoteService.acceptQuote(id, quoteId, user));
+    }
+
+    /**
+     * API 2: CUSTOMER hoặc PROVIDER hủy đơn đặt sửa chữa.
+     * POST /api/bookings/{id}/cancel
+     */
+    @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'USER', 'PROVIDER')")
+    public ResponseEntity<BookingResponse> cancelBooking(
+            @PathVariable UUID id,
+            @RequestBody(required = false) CancelBookingRequest request,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(bookingService.cancelBooking(id, request, user));
+    }
+
+    /**
+     * API 3: PROVIDER gửi báo giá chẩn đoán đã điều chỉnh (version mới).
+     * POST /api/bookings/{id}/quotes/{quoteId}/revise
+     */
+    @PostMapping("/{id}/quotes/{quoteId}/revise")
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ResponseEntity<QuoteResponse> reviseQuote(
+            @PathVariable UUID id,
+            @PathVariable UUID quoteId,
+            @Valid @RequestBody CreateQuoteRequest request,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(quoteService.reviseQuote(id, quoteId, request, user));
     }
 }
