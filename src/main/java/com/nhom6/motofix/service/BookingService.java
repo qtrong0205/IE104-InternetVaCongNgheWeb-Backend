@@ -7,9 +7,11 @@ import com.nhom6.motofix.entity.Booking;
 import com.nhom6.motofix.entity.BookingMedia;
 import com.nhom6.motofix.entity.BookingOffer;
 import com.nhom6.motofix.entity.NearbyProviderView;
+import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.enums.BookingStatus;
 import com.nhom6.motofix.enums.OfferStatus;
 import com.nhom6.motofix.exception.BadRequestException;
+import com.nhom6.motofix.exception.ConflictException;
 import com.nhom6.motofix.exception.ResourceNotFoundException;
 import com.nhom6.motofix.exception.UnauthorizedException;
 import com.nhom6.motofix.mapper.BookingMapper;
@@ -20,6 +22,7 @@ import com.nhom6.motofix.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -167,6 +170,50 @@ public class BookingService {
         );
 
         log.info("Customer {} selected offer {} (provider {}) for booking {}", customerId, offerId, offer.getProvider().getId(), bookingId);
+
+        return bookingMapper.toBookingResponse(saved);
+    }
+
+    @Transactional
+    public BookingResponse confirmEnRoute(UUID bookingId, User user) {
+        Booking booking = bookingRepository.findByIdWithLock(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+
+        if (booking.getProvider() == null ||
+                booking.getProvider().getUser() == null ||
+                !booking.getProvider().getUser().getId().equals(user.getId())) {
+            throw new AccessDeniedException("You are not the assigned provider for this booking");
+        }
+
+        if (booking.getStatus() != BookingStatus.SELECTED_PROVIDER && booking.getStatus() != BookingStatus.PROVIDER_SELECTED) {
+            throw new ConflictException("Booking is in " + booking.getStatus() + " status, cannot move to PROVIDER_EN_ROUTE");
+        }
+
+        booking.setStatus(BookingStatus.PROVIDER_EN_ROUTE);
+        Booking saved = bookingRepository.save(booking);
+        log.info("Provider {} is en-route for booking {}", user.getId(), bookingId);
+
+        return bookingMapper.toBookingResponse(saved);
+    }
+
+    @Transactional
+    public BookingResponse confirmArrived(UUID bookingId, User user) {
+        Booking booking = bookingRepository.findByIdWithLock(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+
+        if (booking.getProvider() == null ||
+                booking.getProvider().getUser() == null ||
+                !booking.getProvider().getUser().getId().equals(user.getId())) {
+            throw new AccessDeniedException("You are not the assigned provider for this booking");
+        }
+
+        if (booking.getStatus() != BookingStatus.PROVIDER_EN_ROUTE) {
+            throw new ConflictException("Booking is in " + booking.getStatus() + " status, cannot move to INSPECTING");
+        }
+
+        booking.setStatus(BookingStatus.INSPECTING);
+        Booking saved = bookingRepository.save(booking);
+        log.info("Provider {} arrived at location for booking {}", user.getId(), bookingId);
 
         return bookingMapper.toBookingResponse(saved);
     }
