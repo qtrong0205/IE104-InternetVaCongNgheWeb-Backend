@@ -1,6 +1,7 @@
 package com.nhom6.motofix.entity;
 
 import com.nhom6.motofix.enums.BookingStatus;
+import com.nhom6.motofix.enums.PaymentMethod;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -35,6 +36,10 @@ public class Booking {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private BookingStatus status = BookingStatus.SEARCHING;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method", length = 20)
+    private PaymentMethod paymentMethod;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;

@@ -1,6 +1,7 @@
 package com.nhom6.motofix.dto.respond;
 
 import com.nhom6.motofix.enums.BookingStatus;
+import com.nhom6.motofix.enums.PaymentMethod;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -15,6 +16,7 @@ public record BookingResponse(
         Double longitude,
         LocalDateTime createdAt,
         UUID customerId,
-        UUID providerId
+        UUID providerId,
+        PaymentMethod paymentMethod
 ) {
 }
