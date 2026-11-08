@@ -1,6 +1,7 @@
 package com.nhom6.motofix.service;
 
 import com.nhom6.motofix.dto.request.CancelBookingRequest;
+import com.nhom6.motofix.dto.request.ConfirmPaymentRequest;
 import com.nhom6.motofix.dto.request.CreateBookingRequest;
 import com.nhom6.motofix.dto.respond.BookingOfferSummaryResponse;
 import com.nhom6.motofix.dto.respond.BookingResponse;
@@ -219,6 +220,94 @@ public class BookingService {
         booking.setStatus(BookingStatus.INSPECTING);
         Booking saved = bookingRepository.save(booking);
         log.info("Provider {} arrived at location for booking {}", user.getId(), bookingId);
+
+        return bookingMapper.toBookingResponse(saved);
+    }
+
+    /**
+     * API 1: PROVIDER xác nhận đã hoàn thành sửa chữa.
+     * PATCH /api/bookings/{id}/complete
+     * Điều kiện nghiệp vụ bắt buộc:
+     * - Booking phải tồn tại.
+     * - Người gọi phải là thợ được phân công cho booking.
+     * - Booking phải đang ở trạng thái IN_PROGRESS.
+     * - Phải có đúng 1 quote ACCEPTED hiện hành.
+     * - Không được còn bất kỳ quote nào ở trạng thái PENDING.
+     * Kết quả:
+     * - Chuyển trạng thái booking sang WAITING_PAYMENT.
+     * - Không thay đổi quote hay quote items.
+     */
+    @Transactional
+    public BookingResponse completeBooking(UUID bookingId, User user) {
+        // Khóa bi quan (pessimistic lock) trên Booking để tránh tranh chấp cập nhật đồng thời
+        Booking booking = bookingRepository.findByIdWithLock(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+
+        if (booking.getProvider() == null ||
+                booking.getProvider().getUser() == null ||
+                !booking.getProvider().getUser().getId().equals(user.getId())) {
+            throw new AccessDeniedException("You are not the assigned provider for this booking");
+        }
+
+        if (booking.getStatus() != BookingStatus.IN_PROGRESS) {
+            throw new ConflictException("Booking must be IN_PROGRESS to complete repair, currently: " + booking.getStatus());
+        }
+
+        // Bắt buộc phải có đúng một quote ACCEPTED hiện hành
+        List<RepairQuote> acceptedQuotes = quoteRepository.findByBookingIdAndStatus(bookingId, QuoteStatus.ACCEPTED);
+        if (acceptedQuotes.size() != 1) {
+            throw new ConflictException("Booking must have exactly one active ACCEPTED quote to complete repair");
+        }
+
+        // Không được còn quote PENDING nào đang chờ khách duyệt
+        boolean hasPendingQuote = quoteRepository.existsByBookingIdAndStatus(bookingId, QuoteStatus.PENDING);
+        if (hasPendingQuote) {
+            throw new ConflictException("Cannot complete repair while there is a PENDING quote awaiting approval");
+        }
+
+        booking.setStatus(BookingStatus.WAITING_PAYMENT);
+        Booking saved = bookingRepository.save(booking);
+        log.info("Provider {} completed repair for booking {}, status moved to WAITING_PAYMENT", user.getId(), bookingId);
+
+        return bookingMapper.toBookingResponse(saved);
+    }
+
+    /**
+     * API 2: PROVIDER xác nhận đã nhận thanh toán từ khách.
+     * PATCH /api/bookings/{id}/payment/confirm
+     * Điều kiện nghiệp vụ:
+     * - Booking phải tồn tại.
+     * - Người gọi phải là thợ được phân công cho booking.
+     * - Booking phải đang ở trạng thái WAITING_PAYMENT.
+     * Kết quả:
+     * - Ghi nhận hình thức thanh toán (CASH / BANK_TRANSFER).
+     * - Chuyển trạng thái booking sang COMPLETED.
+     */
+    @Transactional
+    public BookingResponse confirmPayment(UUID bookingId, ConfirmPaymentRequest request, User user) {
+        // Khóa bi quan (pessimistic lock) trên Booking để đảm bảo không bị gọi xác nhận trùng lặp
+        Booking booking = bookingRepository.findByIdWithLock(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+
+        if (booking.getProvider() == null ||
+                booking.getProvider().getUser() == null ||
+                !booking.getProvider().getUser().getId().equals(user.getId())) {
+            throw new AccessDeniedException("You are not the assigned provider for this booking");
+        }
+
+        if (booking.getStatus() != BookingStatus.WAITING_PAYMENT) {
+            throw new ConflictException("Booking must be in WAITING_PAYMENT status to confirm payment, currently: " + booking.getStatus());
+        }
+
+        if (request == null || request.method() == null) {
+            throw new ConflictException("Payment method is required");
+        }
+
+        booking.setPaymentMethod(request.method());
+        booking.setStatus(BookingStatus.COMPLETED);
+        Booking saved = bookingRepository.save(booking);
+        log.info("Provider {} confirmed payment via {} for booking {}, status moved to COMPLETED",
+                user.getId(), request.method(), bookingId);
 
         return bookingMapper.toBookingResponse(saved);
     }

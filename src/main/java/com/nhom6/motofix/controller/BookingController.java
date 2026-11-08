@@ -2,17 +2,21 @@ package com.nhom6.motofix.controller;
 
 import com.nhom6.motofix.dto.request.AcceptOfferRequest;
 import com.nhom6.motofix.dto.request.CancelBookingRequest;
+import com.nhom6.motofix.dto.request.ConfirmPaymentRequest;
 import com.nhom6.motofix.dto.request.CreateBookingRequest;
 import com.nhom6.motofix.dto.request.CreateQuoteRequest;
+import com.nhom6.motofix.dto.request.CreateReviewRequest;
 import com.nhom6.motofix.dto.request.DeclineOfferRequest;
 import com.nhom6.motofix.dto.respond.BookingOfferSummaryResponse;
 import com.nhom6.motofix.dto.respond.BookingResponse;
 import com.nhom6.motofix.dto.respond.OfferResultResponse;
 import com.nhom6.motofix.dto.respond.QuoteResponse;
+import com.nhom6.motofix.dto.respond.ReviewResponse;
 import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.service.BookingService;
 import com.nhom6.motofix.service.OfferService;
 import com.nhom6.motofix.service.QuoteService;
+import com.nhom6.motofix.service.ReviewService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -31,6 +35,7 @@ public class BookingController {
     private final BookingService bookingService;
     private final OfferService offerService;
     private final QuoteService quoteService;
+    private final ReviewService reviewService;
 
     @PostMapping
     public ResponseEntity<BookingResponse> createBooking(
@@ -99,6 +104,49 @@ public class BookingController {
             @AuthenticationPrincipal User user
     ) {
         return ResponseEntity.ok(bookingService.confirmArrived(id, user));
+    }
+
+    /**
+     * API 1: PROVIDER xác nhận đã hoàn thành việc sửa chữa xe.
+     * PATCH /api/bookings/{id}/complete
+     */
+    @PatchMapping("/{id}/complete")
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ResponseEntity<BookingResponse> completeBooking(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(bookingService.completeBooking(id, user));
+    }
+
+    /**
+     * API 2: PROVIDER xác nhận đã nhận thanh toán từ khách hàng.
+     * PATCH /api/bookings/{id}/payment/confirm
+     */
+    @PatchMapping("/{id}/payment/confirm")
+    @PreAuthorize("hasRole('PROVIDER')")
+    public ResponseEntity<BookingResponse> confirmPayment(
+            @PathVariable UUID id,
+            @Valid @RequestBody ConfirmPaymentRequest request,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(bookingService.confirmPayment(id, request, user));
+    }
+
+    /**
+     * API 3: CUSTOMER đánh giá thợ sau khi đơn đã COMPLETED.
+     * POST /api/bookings/{id}/review
+     */
+    @PostMapping("/{id}/review")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'USER')")
+    public ResponseEntity<ReviewResponse> createReview(
+            @PathVariable UUID id,
+            @Valid @RequestBody CreateReviewRequest request,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(reviewService.createReview(id, request, user));
     }
 
     @PostMapping("/{id}/quotes")
