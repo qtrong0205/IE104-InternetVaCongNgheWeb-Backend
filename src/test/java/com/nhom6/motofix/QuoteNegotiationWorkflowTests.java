@@ -172,7 +172,7 @@ class QuoteNegotiationWorkflowTests {
     }
 
     @Test
-    @DisplayName("Khi chấp nhận quote mới lúc đang IN_PROGRESS -> Quote trước đó chuyển sang SUPERSEDED")
+    @DisplayName("Khi chấp nhận quote mới lúc đã có ACCEPTED cũ -> ACCEPTED cũ thành SUPERSEDED, quote mới thành ACCEPTED")
     void testAcceptQuote_SupersedesPreviousAcceptedQuote() {
         booking.setStatus(BookingStatus.IN_PROGRESS);
         booking = bookingRepository.save(booking);
@@ -186,6 +186,29 @@ class QuoteNegotiationWorkflowTests {
 
         RepairQuote reloadedV1 = quoteRepository.findById(quoteV1.getId()).orElseThrow();
         assertEquals(QuoteStatus.SUPERSEDED, reloadedV1.getStatus());
+    }
+
+    @Test
+    @DisplayName("Chấp nhận quote khi database có nhiều hơn 1 PENDING bất thường -> 409 Conflict")
+    void testAcceptQuote_Conflict_WhenAbnormalMultiplePending() {
+        createTestQuote(booking, 1, QuoteStatus.PENDING);
+        RepairQuote quoteV2 = createTestQuote(booking, 2, QuoteStatus.PENDING);
+
+        assertThrows(ConflictException.class, () ->
+                quoteService.acceptQuote(booking.getId(), quoteV2.getId(), customer)
+        );
+    }
+
+    @Test
+    @DisplayName("Chấp nhận quote khi database có nhiều hơn 1 ACCEPTED bất thường -> 409 Conflict")
+    void testAcceptQuote_Conflict_WhenAbnormalMultipleAccepted() {
+        createTestQuote(booking, 1, QuoteStatus.ACCEPTED);
+        createTestQuote(booking, 2, QuoteStatus.ACCEPTED);
+        RepairQuote quoteV3 = createTestQuote(booking, 3, QuoteStatus.PENDING);
+
+        assertThrows(ConflictException.class, () ->
+                quoteService.acceptQuote(booking.getId(), quoteV3.getId(), customer)
+        );
     }
 
     // ==========================================
@@ -210,7 +233,6 @@ class QuoteNegotiationWorkflowTests {
 
         assertEquals(BookingStatus.CANCELLED, res.status());
 
-        // Flush and clear test persistence context to re-load from database
         entityManager.flush();
         entityManager.clear();
 
@@ -267,7 +289,6 @@ class QuoteNegotiationWorkflowTests {
     void testCancelBooking_CustomerCannotCancelDuringInProgressWithoutPendingQuote() {
         booking.setStatus(BookingStatus.IN_PROGRESS);
         booking = bookingRepository.save(booking);
-        // Có quote ACCEPTED nhưng không có quote PENDING
         createTestQuote(booking, 1, QuoteStatus.ACCEPTED);
 
         assertThrows(ConflictException.class, () ->
@@ -281,7 +302,7 @@ class QuoteNegotiationWorkflowTests {
         booking.setStatus(BookingStatus.IN_PROGRESS);
         booking = bookingRepository.save(booking);
         createTestQuote(booking, 1, QuoteStatus.ACCEPTED);
-        createTestQuote(booking, 2, QuoteStatus.PENDING); // Có quote v2 đang chờ duyệt
+        createTestQuote(booking, 2, QuoteStatus.PENDING);
 
         BookingResponse res = bookingService.cancelBooking(booking.getId(), new CancelBookingRequest("Gia phat sinh qua cao"), customer);
 
@@ -307,40 +328,186 @@ class QuoteNegotiationWorkflowTests {
     }
 
     // ==========================================
-    // 3. API REVISE QUOTE TESTS
+    // 3. API REVISE QUOTE TESTS (Quy tắc mới)
     // ==========================================
 
     @Test
-    @DisplayName("Provider revise quote thành công -> quote cũ chuyển SUPERSEDED, tạo quote mới version tăng 1")
-    void testReviseQuote_Success() {
+    @DisplayName("Trường hợp 1: Chỉ có PENDING, revise -> quote PENDING cũ thành CANCELLED, tạo PENDING mới, based_on_quote_id = null")
+    void testReviseQuote_Case1_OnlyPending() {
         RepairQuote quoteV1 = createTestQuote(booking, 1, QuoteStatus.PENDING);
 
         CreateQuoteRequest reviseReq = new CreateQuoteRequest(
-                "Sua lai chan doan: can thay them xam xe",
-                List.of(
-                        new CreateQuoteItemRequest(QuoteItemType.PART, "Bugi sieu ben", 1, BigDecimal.valueOf(80000), "Bugi Denso"),
-                        new CreateQuoteItemRequest(QuoteItemType.LABOR, "Tien cong sua", 1, BigDecimal.valueOf(50000), "Cong thao lap")
-                )
+                "Chẩn đoán điều chỉnh lại",
+                List.of(new CreateQuoteItemRequest(QuoteItemType.PART, "Linh kien moi", 1, BigDecimal.valueOf(120000), "Mo ta"))
         );
 
-        QuoteResponse res = quoteService.reviseQuote(booking.getId(), quoteV1.getId(), reviseReq, providerUser);
+        QuoteResponse res = quoteService.reviseQuote(booking.getId(), reviseReq, providerUser);
 
         assertNotNull(res);
         assertEquals(2, res.version());
+        assertNull(res.basedOnQuoteId()); // Chưa từng có quote ACCEPTED -> null
+        assertEquals(QuoteStatus.PENDING, res.status());
+        assertEquals(0, BigDecimal.valueOf(120000).compareTo(res.totalAmount()));
+
+        // Quote v1 phải thành CANCELLED (không phải SUPERSEDED)
+        RepairQuote reloadedV1 = quoteRepository.findById(quoteV1.getId()).orElseThrow();
+        assertEquals(QuoteStatus.CANCELLED, reloadedV1.getStatus());
+    }
+
+    @Test
+    @DisplayName("Trường hợp 2: Chỉ có ACCEPTED, revise -> giữ nguyên ACCEPTED, tạo PENDING mới trỏ vào ACCEPTED")
+    void testReviseQuote_Case2_OnlyAccepted() {
+        booking.setStatus(BookingStatus.IN_PROGRESS);
+        booking = bookingRepository.save(booking);
+        RepairQuote quoteV1 = createTestQuote(booking, 1, QuoteStatus.ACCEPTED);
+
+        CreateQuoteRequest reviseReq = new CreateQuoteRequest(
+                "Phát sinh khi đang sửa",
+                List.of(new CreateQuoteItemRequest(QuoteItemType.LABOR, "Công phát sinh", 1, BigDecimal.valueOf(70000), "Mô tả"))
+        );
+
+        QuoteResponse res = quoteService.reviseQuote(booking.getId(), reviseReq, providerUser);
+
+        assertNotNull(res);
+        assertEquals(2, res.version());
+        assertEquals(quoteV1.getId(), res.basedOnQuoteId()); // Trỏ vào quote ACCEPTED
+        assertEquals(QuoteStatus.PENDING, res.status());
+
+        // Quote v1 vẫn phải là ACCEPTED
+        RepairQuote reloadedV1 = quoteRepository.findById(quoteV1.getId()).orElseThrow();
+        assertEquals(QuoteStatus.ACCEPTED, reloadedV1.getStatus());
+    }
+
+    @Test
+    @DisplayName("Trường hợp 3: Có cả ACCEPTED và PENDING, revise -> hủy PENDING cũ thành CANCELLED, giữ ACCEPTED, tạo PENDING mới trỏ vào ACCEPTED")
+    void testReviseQuote_Case3_AcceptedAndPending() {
+        booking.setStatus(BookingStatus.IN_PROGRESS);
+        booking = bookingRepository.save(booking);
+        RepairQuote quoteV1 = createTestQuote(booking, 1, QuoteStatus.ACCEPTED);
+        RepairQuote quoteV2 = createTestQuote(booking, 2, QuoteStatus.PENDING);
+
+        CreateQuoteRequest reviseReq = new CreateQuoteRequest(
+                "Chỉnh sửa lại bản phát sinh v2",
+                List.of(new CreateQuoteItemRequest(QuoteItemType.PART, "Phụ tùng khác", 1, BigDecimal.valueOf(150000), "Mô tả"))
+        );
+
+        QuoteResponse res = quoteService.reviseQuote(booking.getId(), reviseReq, providerUser);
+
+        assertNotNull(res);
+        assertEquals(3, res.version());
+        // based_on_quote_id TUYỆT ĐỐI trỏ vào quote v1 (ACCEPTED), KHÔNG trỏ vào v2
         assertEquals(quoteV1.getId(), res.basedOnQuoteId());
         assertEquals(QuoteStatus.PENDING, res.status());
-        assertEquals(0, BigDecimal.valueOf(130000).compareTo(res.totalAmount()));
-        assertEquals(2, res.items().size());
 
-        // Quote v1 cũ phải chuyển sang SUPERSEDED
+        // Quote v1 giữ nguyên ACCEPTED
         RepairQuote reloadedV1 = quoteRepository.findById(quoteV1.getId()).orElseThrow();
-        assertEquals(QuoteStatus.SUPERSEDED, reloadedV1.getStatus());
+        assertEquals(QuoteStatus.ACCEPTED, reloadedV1.getStatus());
+
+        // Quote v2 chuyển thành CANCELLED
+        RepairQuote reloadedV2 = quoteRepository.findById(quoteV2.getId()).orElseThrow();
+        assertEquals(QuoteStatus.CANCELLED, reloadedV2.getStatus());
+    }
+
+    @Test
+    @DisplayName("Revise quote khi chưa từng có ACCEPTED -> based_on_quote_id luôn bằng null")
+    void testReviseQuote_NeverAccepted_BasedOnQuoteIdIsNull() {
+        createTestQuote(booking, 1, QuoteStatus.PENDING);
+
+        CreateQuoteRequest reviseReq = new CreateQuoteRequest(
+                "Sửa lần 1",
+                List.of(new CreateQuoteItemRequest(QuoteItemType.PART, "Item A", 1, BigDecimal.valueOf(50000), null))
+        );
+        QuoteResponse resV2 = quoteService.reviseQuote(booking.getId(), reviseReq, providerUser);
+        assertNull(resV2.basedOnQuoteId());
+
+        CreateQuoteRequest reviseReq2 = new CreateQuoteRequest(
+                "Sửa lần 2",
+                List.of(new CreateQuoteItemRequest(QuoteItemType.PART, "Item B", 1, BigDecimal.valueOf(60000), null))
+        );
+        QuoteResponse resV3 = quoteService.reviseQuote(booking.getId(), reviseReq2, providerUser);
+        assertNull(resV3.basedOnQuoteId());
+        assertEquals(3, resV3.version());
+    }
+
+    @Test
+    @DisplayName("Revise khi booking chỉ có quote CANCELLED -> 409 Conflict (không có quote hợp lệ)")
+    void testReviseQuote_Conflict_WhenOnlyCancelled() {
+        createTestQuote(booking, 1, QuoteStatus.CANCELLED);
+
+        CreateQuoteRequest reviseReq = new CreateQuoteRequest(
+                "Revise attempt",
+                List.of(new CreateQuoteItemRequest(QuoteItemType.LABOR, "Cong", 1, BigDecimal.valueOf(50000), null))
+        );
+
+        assertThrows(ConflictException.class, () ->
+                quoteService.reviseQuote(booking.getId(), reviseReq, providerUser)
+        );
+    }
+
+    @Test
+    @DisplayName("Revise khi booking chỉ có quote SUPERSEDED -> 409 Conflict (không có quote hợp lệ)")
+    void testReviseQuote_Conflict_WhenOnlySuperseded() {
+        createTestQuote(booking, 1, QuoteStatus.SUPERSEDED);
+
+        CreateQuoteRequest reviseReq = new CreateQuoteRequest(
+                "Revise attempt",
+                List.of(new CreateQuoteItemRequest(QuoteItemType.LABOR, "Cong", 1, BigDecimal.valueOf(50000), null))
+        );
+
+        assertThrows(ConflictException.class, () ->
+                quoteService.reviseQuote(booking.getId(), reviseReq, providerUser)
+        );
+    }
+
+    @Test
+    @DisplayName("Revise khi booking không có bất kỳ quote nào -> 409 Conflict")
+    void testReviseQuote_Conflict_WhenNoQuotes() {
+        CreateQuoteRequest reviseReq = new CreateQuoteRequest(
+                "Revise attempt",
+                List.of(new CreateQuoteItemRequest(QuoteItemType.LABOR, "Cong", 1, BigDecimal.valueOf(50000), null))
+        );
+
+        assertThrows(ConflictException.class, () ->
+                quoteService.reviseQuote(booking.getId(), reviseReq, providerUser)
+        );
+    }
+
+    @Test
+    @DisplayName("Revise khi database có nhiều hơn 1 quote PENDING bất thường -> 409 Conflict")
+    void testReviseQuote_Conflict_WhenMultiplePending() {
+        createTestQuote(booking, 1, QuoteStatus.PENDING);
+        createTestQuote(booking, 2, QuoteStatus.PENDING);
+
+        CreateQuoteRequest reviseReq = new CreateQuoteRequest(
+                "Revise attempt",
+                List.of(new CreateQuoteItemRequest(QuoteItemType.LABOR, "Cong", 1, BigDecimal.valueOf(50000), null))
+        );
+
+        assertThrows(ConflictException.class, () ->
+                quoteService.reviseQuote(booking.getId(), reviseReq, providerUser)
+        );
+    }
+
+    @Test
+    @DisplayName("Revise khi database có nhiều hơn 1 quote ACCEPTED bất thường -> 409 Conflict")
+    void testReviseQuote_Conflict_WhenMultipleAccepted() {
+        createTestQuote(booking, 1, QuoteStatus.ACCEPTED);
+        createTestQuote(booking, 2, QuoteStatus.ACCEPTED);
+
+        CreateQuoteRequest reviseReq = new CreateQuoteRequest(
+                "Revise attempt",
+                List.of(new CreateQuoteItemRequest(QuoteItemType.LABOR, "Cong", 1, BigDecimal.valueOf(50000), null))
+        );
+
+        assertThrows(ConflictException.class, () ->
+                quoteService.reviseQuote(booking.getId(), reviseReq, providerUser)
+        );
     }
 
     @Test
     @DisplayName("Khách hàng hoặc Provider khác không được revise quote -> 403 Forbidden")
     void testReviseQuote_Forbidden_WhenNotAssignedProvider() {
-        RepairQuote quoteV1 = createTestQuote(booking, 1, QuoteStatus.PENDING);
+        createTestQuote(booking, 1, QuoteStatus.PENDING);
 
         CreateQuoteRequest reviseReq = new CreateQuoteRequest(
                 "Revise attempt",
@@ -348,17 +515,17 @@ class QuoteNegotiationWorkflowTests {
         );
 
         assertThrows(AccessDeniedException.class, () ->
-                quoteService.reviseQuote(booking.getId(), quoteV1.getId(), reviseReq, customer)
+                quoteService.reviseQuote(booking.getId(), reviseReq, customer)
         );
         assertThrows(AccessDeniedException.class, () ->
-                quoteService.reviseQuote(booking.getId(), quoteV1.getId(), reviseReq, otherUser)
+                quoteService.reviseQuote(booking.getId(), reviseReq, otherUser)
         );
     }
 
     @Test
     @DisplayName("Không thể revise quote khi Booking ở trạng thái không hợp lệ (ví dụ: CANCELLED) -> 409 Conflict")
     void testReviseQuote_Conflict_WhenInvalidBookingStatus() {
-        RepairQuote quoteV1 = createTestQuote(booking, 1, QuoteStatus.PENDING);
+        createTestQuote(booking, 1, QuoteStatus.PENDING);
         booking.setStatus(BookingStatus.CANCELLED);
         bookingRepository.save(booking);
 
@@ -368,7 +535,35 @@ class QuoteNegotiationWorkflowTests {
         );
 
         assertThrows(ConflictException.class, () ->
-                quoteService.reviseQuote(booking.getId(), quoteV1.getId(), reviseReq, providerUser)
+                quoteService.reviseQuote(booking.getId(), reviseReq, providerUser)
+        );
+    }
+
+    // ==========================================
+    // 4. API GET QUOTES LIST & DETAIL
+    // ==========================================
+
+    @Test
+    @DisplayName("Customer và Provider có thể xem danh sách và chi tiết quote của booking")
+    void testGetQuotes_Success() {
+        RepairQuote quoteV1 = createTestQuote(booking, 1, QuoteStatus.CANCELLED);
+        RepairQuote quoteV2 = createTestQuote(booking, 2, QuoteStatus.PENDING);
+
+        List<QuoteResponse> listCust = quoteService.getQuotesForBooking(booking.getId(), customer);
+        assertEquals(2, listCust.size());
+        assertEquals(1, listCust.get(0).version());
+        assertEquals(2, listCust.get(1).version());
+
+        List<QuoteResponse> listProv = quoteService.getQuotesForBooking(booking.getId(), providerUser);
+        assertEquals(2, listProv.size());
+
+        QuoteResponse detail = quoteService.getQuoteDetails(booking.getId(), quoteV2.getId(), customer);
+        assertEquals(quoteV2.getId(), detail.id());
+        assertEquals(2, detail.version());
+
+        // Người lạ xem quote bị 403 Forbidden
+        assertThrows(AccessDeniedException.class, () ->
+                quoteService.getQuotesForBooking(booking.getId(), otherUser)
         );
     }
 }
