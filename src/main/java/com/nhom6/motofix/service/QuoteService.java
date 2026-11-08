@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Slf4j
@@ -92,9 +93,11 @@ public class QuoteService {
 
     /**
      * Customer chấp nhận một chẩn đoán / báo giá.
+     * Endpoint: POST /api/bookings/{id}/quotes/{quoteId}/accept
      * Quy tắc:
      * - Chỉ Customer sở hữu booking mới được chấp nhận.
      * - Booking phải ở trạng thái INSPECTING hoặc IN_PROGRESS.
+     * - Kiểm tra dữ liệu bất thường: nếu có > 1 quote PENDING hoặc > 1 quote ACCEPTED -> ném ConflictException.
      * - Quote phải thuộc về booking và đang ở trạng thái PENDING.
      * - Báo giá cũ đã ACCEPTED (nếu có) sẽ được chuyển sang SUPERSEDED.
      * - Quote được chấp nhận chuyển sang ACCEPTED, các item chuyển sang ACCEPTED.
@@ -116,6 +119,17 @@ public class QuoteService {
             throw new ConflictException("Booking status must be INSPECTING or IN_PROGRESS to accept quote, but was: " + booking.getStatus());
         }
 
+        // Kiểm tra tính bất thường của dữ liệu trong database
+        List<RepairQuote> pendingQuotes = quoteRepository.findByBookingIdAndStatus(bookingId, QuoteStatus.PENDING);
+        if (pendingQuotes.size() > 1) {
+            throw new ConflictException("Abnormal quote state: multiple PENDING quotes found for booking " + bookingId);
+        }
+
+        List<RepairQuote> acceptedQuotes = quoteRepository.findByBookingIdAndStatus(bookingId, QuoteStatus.ACCEPTED);
+        if (acceptedQuotes.size() > 1) {
+            throw new ConflictException("Abnormal quote state: multiple ACCEPTED quotes found for booking " + bookingId);
+        }
+
         // Kiểm tra sự tồn tại của Quote
         RepairQuote quote = quoteRepository.findById(quoteId)
                 .orElseThrow(() -> new ResourceNotFoundException("Quote not found"));
@@ -130,13 +144,12 @@ public class QuoteService {
             throw new ConflictException("Only PENDING quotes can be accepted. Current status: " + quote.getStatus());
         }
 
-        // Nếu trước đó đã có quote ACCEPTED (trong trường hợp revise khi đang IN_PROGRESS), chuyển sang SUPERSEDED
-        var existingAcceptedQuotes = quoteRepository.findByBookingIdAndStatus(bookingId, QuoteStatus.ACCEPTED);
-        for (RepairQuote prevAccepted : existingAcceptedQuotes) {
+        // Nếu trước đó đã có quote ACCEPTED, chuyển quote đó sang SUPERSEDED
+        for (RepairQuote prevAccepted : acceptedQuotes) {
             if (!prevAccepted.getId().equals(quoteId)) {
                 prevAccepted.setStatus(QuoteStatus.SUPERSEDED);
                 quoteRepository.save(prevAccepted);
-                log.info("Superseded previous quote {} for booking {}", prevAccepted.getId(), bookingId);
+                log.info("Superseded previous accepted quote {} for booking {}", prevAccepted.getId(), bookingId);
             }
         }
 
@@ -166,17 +179,20 @@ public class QuoteService {
 
     /**
      * Provider chỉnh sửa lại chẩn đoán / báo giá (tạo version mới).
+     * Endpoint: POST /api/bookings/{id}/quotes/revise
      * Quy tắc:
+     * - Không truyền quoteId: backend tự xác định quote cần xử lý.
      * - Chỉ Provider được phân công cho booking mới được thao tác.
      * - Booking phải ở trạng thái INSPECTING hoặc IN_PROGRESS.
-     * - Quote gốc (quoteId) phải thuộc về booking.
-     * - Nếu quote gốc đang ở trạng thái PENDING thì chuyển sang SUPERSEDED.
-     * - Version mới = version cao nhất hiện tại + 1.
-     * - based_on_quote_id trỏ về quoteId gốc.
-     * - Trạng thái quote mới là PENDING, các item bắt đầu với PENDING.
+     * - Kiểm tra dữ liệu bất thường: nếu có > 1 quote PENDING hoặc > 1 quote ACCEPTED -> ném ConflictException.
+     * - Nếu không có quote PENDING và cũng không có quote ACCEPTED -> ném ConflictException (không có quote hợp lệ).
+     * - Trường hợp 1: Booking chỉ có PENDING -> quote PENDING cũ thành CANCELLED, tạo quote mới PENDING với based_on_quote_id = null.
+     * - Trường hợp 2: Booking chỉ có ACCEPTED -> giữ nguyên ACCEPTED, tạo quote mới PENDING với based_on_quote_id = ID của ACCEPTED.
+     * - Trường hợp 3: Booking có cả ACCEPTED và PENDING -> quote PENDING cũ thành CANCELLED, giữ nguyên ACCEPTED,
+     *                 tạo quote mới PENDING với based_on_quote_id = ID của ACCEPTED (tuyệt đối không trỏ vào PENDING cũ).
      */
     @Transactional
-    public QuoteResponse reviseQuote(UUID bookingId, UUID quoteId, CreateQuoteRequest request, User user) {
+    public QuoteResponse reviseQuote(UUID bookingId, CreateQuoteRequest request, User user) {
         // Khóa pessimistic lock trên Booking để tránh xung đột đồng thời
         Booking booking = bookingRepository.findByIdWithLock(bookingId)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
@@ -193,21 +209,34 @@ public class QuoteService {
             throw new ConflictException("Booking status must be INSPECTING or IN_PROGRESS to revise quote, but was: " + booking.getStatus());
         }
 
-        // Kiểm tra sự tồn tại của Quote gốc cần sửa
-        RepairQuote basedQuote = quoteRepository.findById(quoteId)
-                .orElseThrow(() -> new ResourceNotFoundException("Quote to revise not found"));
-
-        // Kiểm tra Quote gốc có thuộc booking này không
-        if (!basedQuote.getBooking().getId().equals(bookingId)) {
-            throw new ConflictException("Quote does not belong to this booking");
+        // Kiểm tra tính bất thường của dữ liệu
+        List<RepairQuote> pendingQuotes = quoteRepository.findByBookingIdAndStatus(bookingId, QuoteStatus.PENDING);
+        if (pendingQuotes.size() > 1) {
+            throw new ConflictException("Abnormal quote state: multiple PENDING quotes found for booking " + bookingId);
         }
 
-        // Nếu quote gốc đang ở PENDING thì thay thế bằng cách chuyển sang SUPERSEDED
-        if (basedQuote.getStatus() == QuoteStatus.PENDING) {
-            basedQuote.setStatus(QuoteStatus.SUPERSEDED);
-            quoteRepository.save(basedQuote);
-            log.info("Superseded unapproved quote {} by new revised version for booking {}", quoteId, bookingId);
+        List<RepairQuote> acceptedQuotes = quoteRepository.findByBookingIdAndStatus(bookingId, QuoteStatus.ACCEPTED);
+        if (acceptedQuotes.size() > 1) {
+            throw new ConflictException("Abnormal quote state: multiple ACCEPTED quotes found for booking " + bookingId);
         }
+
+        RepairQuote pendingQuote = pendingQuotes.isEmpty() ? null : pendingQuotes.get(0);
+        RepairQuote acceptedQuote = acceptedQuotes.isEmpty() ? null : acceptedQuotes.get(0);
+
+        // Ràng buộc 6: Không cho phép revise nếu không có quote PENDING hoặc ACCEPTED hợp lệ
+        if (pendingQuote == null && acceptedQuote == null) {
+            throw new ConflictException("Cannot revise quote: Booking does not have any active PENDING or ACCEPTED quote to revise");
+        }
+
+        // Nếu có quote PENDING hiện tại, hủy quote PENDING đó (chuyển sang CANCELLED)
+        if (pendingQuote != null) {
+            pendingQuote.setStatus(QuoteStatus.CANCELLED);
+            quoteRepository.save(pendingQuote);
+            log.info("Cancelled unapproved pending quote {} for booking {}", pendingQuote.getId(), bookingId);
+        }
+
+        // based_on_quote_id chỉ được trỏ đến quote ACCEPTED (null nếu chưa từng có quote ACCEPTED)
+        RepairQuote basedQuote = acceptedQuote;
 
         // Tính version mới tiếp theo
         int nextVersion = quoteRepository.findMaxVersionByBookingId(bookingId) + 1;
@@ -241,9 +270,61 @@ public class QuoteService {
 
         RepairQuote savedQuote = quoteRepository.save(revisedQuote);
         log.info("Provider {} revised quote (new v{}) for booking {}, based on quote {}",
-                user.getId(), nextVersion, bookingId, quoteId);
+                user.getId(), nextVersion, bookingId, (basedQuote != null ? basedQuote.getId() : "null"));
 
         return QuoteResponse.from(savedQuote);
+    }
+
+    /**
+     * Lấy danh sách các phiên bản chẩn đoán của booking (theo thứ tự version tăng dần).
+     * Endpoint: GET /api/bookings/{id}/quotes
+     */
+    @Transactional(readOnly = true)
+    public List<QuoteResponse> getQuotesForBooking(UUID bookingId, User user) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+
+        boolean isCustomer = booking.getCustomer() != null && booking.getCustomer().getId().equals(user.getId());
+        boolean isProvider = booking.getProvider() != null &&
+                booking.getProvider().getUser() != null &&
+                booking.getProvider().getUser().getId().equals(user.getId());
+
+        if (!isCustomer && !isProvider) {
+            throw new AccessDeniedException("You do not have permission to view quotes for this booking");
+        }
+
+        return quoteRepository.findByBookingIdOrderByVersionAsc(bookingId)
+                .stream()
+                .map(QuoteResponse::from)
+                .toList();
+    }
+
+    /**
+     * Lấy chi tiết một phiên bản chẩn đoán.
+     * Endpoint: GET /api/bookings/{id}/quotes/{quoteId}
+     */
+    @Transactional(readOnly = true)
+    public QuoteResponse getQuoteDetails(UUID bookingId, UUID quoteId, User user) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+
+        boolean isCustomer = booking.getCustomer() != null && booking.getCustomer().getId().equals(user.getId());
+        boolean isProvider = booking.getProvider() != null &&
+                booking.getProvider().getUser() != null &&
+                booking.getProvider().getUser().getId().equals(user.getId());
+
+        if (!isCustomer && !isProvider) {
+            throw new AccessDeniedException("You do not have permission to view quotes for this booking");
+        }
+
+        RepairQuote quote = quoteRepository.findById(quoteId)
+                .orElseThrow(() -> new ResourceNotFoundException("Quote not found"));
+
+        if (!quote.getBooking().getId().equals(bookingId)) {
+            throw new ConflictException("Quote does not belong to this booking");
+        }
+
+        return QuoteResponse.from(quote);
     }
 }
 

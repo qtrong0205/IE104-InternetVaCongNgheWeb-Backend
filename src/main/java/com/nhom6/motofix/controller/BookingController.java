@@ -142,19 +142,46 @@ public class BookingController {
     }
 
     /**
-     * API 3: PROVIDER gửi báo giá chẩn đoán đã điều chỉnh (version mới).
-     * POST /api/bookings/{id}/quotes/{quoteId}/revise
+     * API: PROVIDER gửi báo giá chẩn đoán đã điều chỉnh (version mới).
+     * POST /api/bookings/{id}/quotes/revise
+     * Backend tự xác định quote cần xử lý theo trạng thái database.
      */
-    @PostMapping("/{id}/quotes/{quoteId}/revise")
+    @PostMapping("/{id}/quotes/revise")
     @PreAuthorize("hasRole('PROVIDER')")
     public ResponseEntity<QuoteResponse> reviseQuote(
             @PathVariable UUID id,
-            @PathVariable UUID quoteId,
             @Valid @RequestBody CreateQuoteRequest request,
             @AuthenticationPrincipal User user
     ) {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(quoteService.reviseQuote(id, quoteId, request, user));
+                .body(quoteService.reviseQuote(id, request, user));
+    }
+
+    /**
+     * API: Xem danh sách các phiên bản chẩn đoán của booking.
+     * GET /api/bookings/{id}/quotes
+     */
+    @GetMapping("/{id}/quotes")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'USER', 'PROVIDER')")
+    public ResponseEntity<List<QuoteResponse>> getQuotes(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(quoteService.getQuotesForBooking(id, user));
+    }
+
+    /**
+     * API: Xem chi tiết một phiên bản chẩn đoán.
+     * GET /api/bookings/{id}/quotes/{quoteId}
+     */
+    @GetMapping("/{id}/quotes/{quoteId}")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'USER', 'PROVIDER')")
+    public ResponseEntity<QuoteResponse> getQuoteDetails(
+            @PathVariable UUID id,
+            @PathVariable UUID quoteId,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(quoteService.getQuoteDetails(id, quoteId, user));
     }
 }
