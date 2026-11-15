@@ -2,13 +2,17 @@ package com.nhom6.motofix.controller;
 
 import com.nhom6.motofix.dto.request.LoginRequest;
 import com.nhom6.motofix.dto.request.RegisterRequest;
+import com.nhom6.motofix.dto.request.ResetPasswordRequest;
 import com.nhom6.motofix.dto.respond.LoginResponse;
+import com.nhom6.motofix.dto.respond.MessageResponse;
 import com.nhom6.motofix.dto.respond.RegisterResponse;
+import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -42,5 +46,28 @@ public class AuthController {
                 authService.login(request);
 
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * API 1: Đăng xuất.
+     * POST /api/auth/logout
+     */
+    @PostMapping("/logout")
+    public ResponseEntity<MessageResponse> logout(
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(authService.logout(user));
+    }
+
+    /**
+     * API 2: Đặt lại mật khẩu.
+     * POST /api/auth/reset-password
+     */
+    @PostMapping("/reset-password")
+    public ResponseEntity<MessageResponse> resetPassword(
+            @AuthenticationPrincipal User user,
+            @Valid @RequestBody ResetPasswordRequest request
+    ) {
+        return ResponseEntity.ok(authService.resetPassword(user, request));
     }
 }

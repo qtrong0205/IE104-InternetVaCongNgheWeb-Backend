@@ -2,7 +2,9 @@ package com.nhom6.motofix.service;
 
 import com.nhom6.motofix.dto.request.LoginRequest;
 import com.nhom6.motofix.dto.request.RegisterRequest;
+import com.nhom6.motofix.dto.request.ResetPasswordRequest;
 import com.nhom6.motofix.dto.respond.LoginResponse;
+import com.nhom6.motofix.dto.respond.MessageResponse;
 import com.nhom6.motofix.dto.respond.RegisterResponse;
 import com.nhom6.motofix.entity.Role;
 import com.nhom6.motofix.entity.User;
@@ -15,6 +17,7 @@ import com.nhom6.motofix.repository.UserRepository;
 import com.nhom6.motofix.security.JwtService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -104,4 +107,56 @@ public class AuthService {
         return new LoginResponse(accessToken, "Bearer", userInfo);
     }
 
+    /**
+     * API 1: Đăng xuất người dùng
+     * Xóa thông tin xác thực trong SecurityContext
+     */
+    public MessageResponse logout(User currentUser) {
+        SecurityContextHolder.clearContext();
+        return new MessageResponse("Logged out successfully");
+    }
+
+    /**
+     * API 2: Đặt lại mật khẩu
+     * Quy tắc nghiệp vụ:
+     * - Người dùng phải đăng nhập
+     * - Xác thực mật khẩu hiện tại
+     * - Kiểm tra mật khẩu mới và mật khẩu xác nhận trùng khớp
+     * - Mã hóa mật khẩu mới bằng PasswordEncoder (BCrypt)
+     * - Không cho phép đặt mật khẩu mới trùng mật khẩu hiện tại
+     */
+    @Transactional
+    public MessageResponse resetPassword(User currentUser, ResetPasswordRequest request) {
+        if (currentUser == null) {
+            throw new UnauthorizedException("User is not authenticated");
+        }
+
+        User user = userRepository.findById(currentUser.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if ("locked".equalsIgnoreCase(user.getStatus())) {
+            throw new UnauthorizedException("Account is locked");
+        }
+
+        // 1. Xác thực mật khẩu hiện tại
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            throw new BadRequestException("Current password is incorrect");
+        }
+
+        // 2. Kiểm tra mật khẩu mới và xác nhận mật khẩu mới có trùng khớp không
+        if (!request.newPassword().equals(request.confirmPassword())) {
+            throw new BadRequestException("New password and confirmation password do not match");
+        }
+
+        // 3. Không cho phép đặt mật khẩu mới trùng mật khẩu hiện tại
+        if (passwordEncoder.matches(request.newPassword(), user.getPasswordHash())) {
+            throw new BadRequestException("New password must not be the same as the current password");
+        }
+
+        // 4. Mã hóa mật khẩu mới và lưu vào CSDL
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        userRepository.save(user);
+
+        return new MessageResponse("Password reset successfully");
+    }
 }
