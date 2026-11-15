@@ -1,5 +1,6 @@
 package com.nhom6.motofix.dto.respond;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.nhom6.motofix.enums.ApprovalStatus;
 
 import java.time.LocalDateTime;
@@ -15,6 +16,15 @@ public record ProviderProfileResponse(
         Float serviceRadiusKm,
         ApprovalStatus approvalStatus,
         String rejectionReason,
-        LocalDateTime createdAt
+        @JsonProperty("isActive")
+        boolean isActive,
+        Float ratingAvg,
+        int ratingCount,
+        LocalDateTime createdAt,
+        LocalDateTime updatedAt
 ) {
+    @JsonProperty("is_active")
+    public boolean getIsActiveSnake() {
+        return isActive;
+    }
 }

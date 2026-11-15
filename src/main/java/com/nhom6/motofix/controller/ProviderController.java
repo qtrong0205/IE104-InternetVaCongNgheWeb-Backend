@@ -1,5 +1,6 @@
 package com.nhom6.motofix.controller;
 
+import com.nhom6.motofix.dto.request.ProviderActiveRequest;
 import com.nhom6.motofix.dto.request.ProviderProfileRequest;
 import com.nhom6.motofix.dto.respond.IncomingOfferResponse;
 import com.nhom6.motofix.dto.respond.ProviderProfileResponse;
@@ -24,16 +25,39 @@ public class ProviderController {
     public ResponseEntity<ProviderProfileResponse> uploadProfile(
             @AuthenticationPrincipal User user,
             @RequestBody @Valid ProviderProfileRequest request
-            ){
+    ) {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(providerService.uploadProfile(user, request));
     }
 
+    @GetMapping("/me")
+    public ResponseEntity<ProviderProfileResponse> getMyProfile(
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(providerService.getMyProfile(user));
+    }
+
+    @PutMapping("/me")
+    public ResponseEntity<ProviderProfileResponse> updateMyProfile(
+            @AuthenticationPrincipal User user,
+            @RequestBody @Valid ProviderProfileRequest request
+    ) {
+        return ResponseEntity.ok(providerService.updateMyProfile(user, request));
+    }
+
+    @PatchMapping({"/me/active", "/me/online"})
+    public ResponseEntity<ProviderProfileResponse> updateActiveStatus(
+            @AuthenticationPrincipal User user,
+            @RequestBody @Valid ProviderActiveRequest request
+    ) {
+        return ResponseEntity.ok(providerService.updateActiveStatus(user, request));
+    }
+
     @GetMapping("/incoming-offers")
     public ResponseEntity<List<IncomingOfferResponse>> getIncomingOffers(
             @AuthenticationPrincipal User user
-    ){
+    ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(providerService.getIncomingOffers(user));
