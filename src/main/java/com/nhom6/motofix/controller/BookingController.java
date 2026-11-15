@@ -13,12 +13,17 @@ import com.nhom6.motofix.dto.respond.OfferResultResponse;
 import com.nhom6.motofix.dto.respond.QuoteResponse;
 import com.nhom6.motofix.dto.respond.ReviewResponse;
 import com.nhom6.motofix.entity.User;
+import com.nhom6.motofix.enums.BookingStatus;
 import com.nhom6.motofix.service.BookingService;
 import com.nhom6.motofix.service.OfferService;
 import com.nhom6.motofix.service.QuoteService;
 import com.nhom6.motofix.service.ReviewService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -45,6 +50,16 @@ public class BookingController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(bookingService.createBooking(request, user.getId()));
+    }
+
+    @GetMapping
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'USER')")
+    public ResponseEntity<Page<BookingResponse>> getCustomerBookings(
+            @AuthenticationPrincipal User user,
+            @RequestParam(required = false) BookingStatus status,
+            @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        return ResponseEntity.ok(bookingService.getCustomerBookings(user.getId(), status, pageable));
     }
 
     @PostMapping("/{offerId}/offer/accept")

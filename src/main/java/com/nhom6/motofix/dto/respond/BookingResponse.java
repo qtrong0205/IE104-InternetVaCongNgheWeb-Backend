@@ -3,6 +3,7 @@ package com.nhom6.motofix.dto.respond;
 import com.nhom6.motofix.enums.BookingStatus;
 import com.nhom6.motofix.enums.PaymentMethod;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -17,6 +18,7 @@ public record BookingResponse(
         LocalDateTime createdAt,
         UUID customerId,
         UUID providerId,
-        PaymentMethod paymentMethod
+        PaymentMethod paymentMethod,
+        BigDecimal totalAmount
 ) {
 }

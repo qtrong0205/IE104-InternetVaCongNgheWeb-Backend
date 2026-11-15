@@ -27,6 +27,8 @@ import com.nhom6.motofix.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -305,6 +308,7 @@ public class BookingService {
 
         booking.setPaymentMethod(request.method());
         booking.setStatus(BookingStatus.COMPLETED);
+        booking.setUpdatedAt(LocalDateTime.now());
         Booking saved = bookingRepository.save(booking);
         log.info("Provider {} confirmed payment via {} for booking {}, status moved to COMPLETED",
                 user.getId(), request.method(), bookingId);
@@ -379,5 +383,27 @@ public class BookingService {
                 (request != null ? request.reason() : "N/A"));
 
         return bookingMapper.toBookingResponse(saved);
+    }
+
+    /**
+     * Khách hàng xem lịch sử các đơn đã kết thúc (COMPLETED và CANCELLED).
+     */
+    @Transactional(readOnly = true)
+    public Page<BookingResponse> getCustomerBookings(UUID customerId, BookingStatus status, Pageable pageable) {
+        if (customerId == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để thực hiện thao tác này");
+        }
+
+        Set<BookingStatus> allowedStatuses = Set.of(BookingStatus.COMPLETED, BookingStatus.CANCELLED);
+        if (status != null) {
+            if (!allowedStatuses.contains(status)) {
+                throw new BadRequestException("Lịch sử đơn chỉ bao gồm các đơn đã kết thúc (COMPLETED hoặc CANCELLED)");
+            }
+            return bookingRepository.findByCustomerIdAndStatus(customerId, status, pageable)
+                    .map(bookingMapper::toBookingResponse);
+        }
+
+        return bookingRepository.findByCustomerIdAndStatusIn(customerId, allowedStatuses, pageable)
+                .map(bookingMapper::toBookingResponse);
     }
 }

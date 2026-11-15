@@ -2,18 +2,23 @@ package com.nhom6.motofix.service;
 
 import com.nhom6.motofix.dto.request.ProviderActiveRequest;
 import com.nhom6.motofix.dto.request.ProviderProfileRequest;
+import com.nhom6.motofix.dto.respond.BookingResponse;
 import com.nhom6.motofix.dto.respond.IncomingOfferResponse;
 import com.nhom6.motofix.dto.respond.ProviderProfileResponse;
+import com.nhom6.motofix.dto.respond.ProviderRevenueResponse;
 import com.nhom6.motofix.entity.Booking;
 import com.nhom6.motofix.entity.BookingOffer;
 import com.nhom6.motofix.entity.ProviderProfile;
+import com.nhom6.motofix.entity.RepairQuote;
 import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.enums.ApprovalStatus;
 import com.nhom6.motofix.enums.BookingStatus;
 import com.nhom6.motofix.enums.OfferStatus;
+import com.nhom6.motofix.enums.QuoteStatus;
 import com.nhom6.motofix.exception.BadRequestException;
 import com.nhom6.motofix.exception.ResourceNotFoundException;
 import com.nhom6.motofix.exception.UnauthorizedException;
+import com.nhom6.motofix.mapper.BookingMapper;
 import com.nhom6.motofix.mapper.ProviderProfileMapper;
 import com.nhom6.motofix.repository.BookingOfferRepository;
 import com.nhom6.motofix.repository.BookingRepository;
@@ -28,9 +33,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -52,6 +62,7 @@ public class ProviderService {
     private final BookingRepository bookingRepository;
     private final RoleRepository roleRepository;
     private final UserRepository userRepository;
+    private final BookingMapper bookingMapper;
 
     @Transactional
     public ProviderProfileResponse uploadProfile(
@@ -247,6 +258,76 @@ public class ProviderService {
                 o.getDistanceM(),
                 o.getCreatedAt(),
                 o.getExpiresAt()
+        );
+    }
+
+    /**
+     * Provider xem lịch sử các đơn đã kết thúc (COMPLETED và CANCELLED) của mình.
+     */
+    @Transactional(readOnly = true)
+    public Page<BookingResponse> getProviderBookings(User user, BookingStatus status, Pageable pageable) {
+        if (user == null || user.getId() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để thực hiện thao tác này");
+        }
+
+        ProviderProfile provider = providerProfileRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ thợ không tồn tại"));
+
+        Set<BookingStatus> allowedStatuses = Set.of(BookingStatus.COMPLETED, BookingStatus.CANCELLED);
+        if (status != null) {
+            if (!allowedStatuses.contains(status)) {
+                throw new BadRequestException("Lịch sử đơn chỉ bao gồm các đơn đã kết thúc (COMPLETED hoặc CANCELLED)");
+            }
+            return bookingRepository.findByProviderIdAndStatus(provider.getId(), status, pageable)
+                    .map(bookingMapper::toBookingResponse);
+        }
+
+        return bookingRepository.findByProviderIdAndStatusIn(provider.getId(), allowedStatuses, pageable)
+                .map(bookingMapper::toBookingResponse);
+    }
+
+    /**
+     * Provider xem doanh thu theo ngày cụ thể (mặc định hôm nay).
+     * Chỉ tính từ các đơn COMPLETED được xác nhận thanh toán trong ngày đó.
+     */
+    @Transactional(readOnly = true)
+    public ProviderRevenueResponse getProviderRevenue(User user, LocalDate date) {
+        if (user == null || user.getId() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để thực hiện thao tác này");
+        }
+
+        ProviderProfile provider = providerProfileRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ thợ không tồn tại"));
+
+        LocalDate targetDate = (date != null) ? date : LocalDate.now();
+        LocalDateTime startOfDay = targetDate.atStartOfDay();
+        LocalDateTime endOfDay = targetDate.atTime(LocalTime.MAX);
+
+        List<Booking> completedBookings = bookingRepository.findCompletedBookingsWithQuotesByProviderAndDateRange(
+                provider.getId(),
+                BookingStatus.COMPLETED,
+                startOfDay,
+                endOfDay
+        );
+
+        BigDecimal totalRevenue = completedBookings.stream()
+                .map(b -> b.getQuotes().stream()
+                        .filter(q -> q.getStatus() == QuoteStatus.ACCEPTED)
+                        .map(RepairQuote::getTotalAmount)
+                        .filter(Objects::nonNull)
+                        .findFirst()
+                        .orElse(BigDecimal.ZERO))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        List<BookingResponse> bookingResponses = completedBookings.stream()
+                .map(bookingMapper::toBookingResponse)
+                .toList();
+
+        return new ProviderRevenueResponse(
+                targetDate,
+                totalRevenue,
+                completedBookings.size(),
+                bookingResponses
         );
     }
 }
