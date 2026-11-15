@@ -19,6 +19,7 @@ public interface UserMapper {
     @Mapping(target = "status", ignore = true)
     @Mapping(target = "roles", ignore = true)
     @Mapping(target = "passwordHash", ignore = true)
+    @Mapping(target = "vehicles", ignore = true)
     User toEntity(RegisterRequest request);
 
     // Map từ Entity sang Response DTO
