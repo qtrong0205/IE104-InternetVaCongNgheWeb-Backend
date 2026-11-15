@@ -18,7 +18,10 @@ public interface ProviderProfileMapper {
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     @Mapping(target = "user", ignore = true)
+    @Mapping(target = "bookings", ignore = true)
+    @Mapping(target = "offers", ignore = true)
     ProviderProfile toEntity(ProviderProfileRequest request);
 
+    @Mapping(target = "isActive", source = "active")
     ProviderProfileResponse toResponse(ProviderProfile providerProfile);
 }
