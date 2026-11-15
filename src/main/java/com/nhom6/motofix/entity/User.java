@@ -55,6 +55,9 @@ public class User {
     @OneToMany(mappedBy = "customer", fetch = FetchType.LAZY)
     private List<Booking> bookings = new ArrayList<>();
 
+    @OneToMany(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<CustomerVehicle> vehicles = new ArrayList<>();
+
     @PrePersist
     protected void onCreate() {
         LocalDateTime now = LocalDateTime.now();
