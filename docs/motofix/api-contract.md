@@ -1,7 +1,7 @@
 # MotoFix Backend · Hợp đồng API (API Contract)
 
-> **Phiên bản tài liệu:** 1.5.0 (Hoàn thành đợt BE05 · Máy trạng thái, hủy và quote phiên bản)  
-> **Phiên bản mã nguồn cơ sở (Git commit):** `BE05-release` (Branch: `main`)  
+> **Phiên bản tài liệu:** 1.6.0 (Hoàn thành đợt BE06 · Thanh toán, doanh thu và đánh giá)  
+> **Phiên bản mã nguồn cơ sở (Git commit):** `BE06-release` (Branch: `main`)  
 > **Hệ thống:** Java 17 / Spring Boot 4.1.1 / PostgreSQL 17.6 PostGIS / Supabase Storage  
 
 ---
@@ -744,25 +744,30 @@
 ### 9.2. Thợ xác nhận đã nhận thanh toán `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `PATCH /api/bookings/{id}/payment/confirm`
 - **Role:** `PROVIDER` được gán
-- **Điều kiện:** Booking đang ở `WAITING_PAYMENT`.
+- **Điều kiện:**
+  1. Booking đang ở `WAITING_PAYMENT`. Bấm lặp lại khi đã `COMPLETED` sẽ trả mã lỗi `409 Conflict`.
+  2. Phương thức thanh toán `paymentMethod` bắt buộc (`CASH` hoặc `BANK_TRANSFER`).
 - **Request Body:**
   ```json
   {
     "paymentMethod": "CASH"
   }
   ```
-  *(Phương thức: `CASH` hoặc `BANK_TRANSFER`).*
-- **Xử lý:** Chuyển booking sang `COMPLETED`, lưu `paymentMethod` và mốc thời gian nhận tiền thực tế.
-- **Response:** `200 OK` (`BookingResponse`).
+- **Xử lý:** Chuyển booking sang `COMPLETED`, lưu `paymentMethod`, ghi nhận mốc thời gian nhận tiền thực tế `completedAt = now` (lưu một lần duy nhất).
+- **Response:** `200 OK` (`BookingResponse` bao gồm `completedAt` và `reviewDeadline = completedAt + 168h`).
 
 ---
 
 ## 10. Nhóm 09: Lịch sử, Doanh thu & Đánh giá
 
-### 10.1. Khách đánh giá thợ `[ĐÃ KIỂM THỬ - CẦN BỔ SUNG HẠN 7 NGÀY]`
+### 10.1. Khách đánh giá thợ `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `POST /api/bookings/{id}/review`
-- **Role:** `CUSTOMER` chủ đơn
-- **Điều kiện:** Booking ở trạng thái `COMPLETED`; chưa từng đánh giá; trong thời hạn 168 giờ (7 ngày) kể từ khi thợ xác nhận nhận tiền.
+- **Role:** `CUSTOMER` chủ đơn (`customer_id == user.id`)
+- **Điều kiện:**
+  1. Booking ở trạng thái `COMPLETED`. Chưa hoàn tất chuyển trả `409 Conflict`.
+  2. Mỗi đơn chỉ đánh giá duy nhất 1 lần (ràng buộc `UNIQUE uk_reviews_booking_id`). Hai tab gửi trùng request 2 sẽ bị từ chối `409 Conflict`.
+  3. Điểm đánh giá (rating) hợp lệ từ 1 đến 5 sao. Ngoài khoảng trả `400 Bad Request`.
+  4. Trong thời hạn 168 giờ (7 ngày) kể từ khi thợ xác nhận nhận tiền (`completedAt`). Đúng thời điểm hết hạn (`now >= deadline`) hoặc sau hạn sẽ bị từ chối `409 Conflict`.
 - **Request Body:**
   ```json
   {
@@ -770,42 +775,67 @@
     "comment": "Thợ đến nhanh, sửa rất cẩn thận và nhiệt tình!"
   }
   ```
-- **Response:** `201 CREATED` (Tự động tính lại `ratingAvg` và `ratingCount` cho hồ sơ thợ).
+- **Response:** `201 CREATED` (`ReviewResponse`). Tự động khóa bi quan `ProviderProfile` để tính lại chính xác `ratingAvg` và `ratingCount` cho hồ sơ thợ kể cả khi có nhiều khách hàng đánh giá đồng thời.
 
 ### 10.2. Khách xem lịch sử đơn `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `GET /api/bookings?status=COMPLETED&page=0&size=10`
 - **Role:** `CUSTOMER`
-- **Response:** `200 OK` (Phân trang danh sách đơn đã kết thúc: `COMPLETED` / `CANCELLED`).
+- **Response:** `200 OK` (Phân trang danh sách đơn đã kết thúc: `COMPLETED` / `CANCELLED`, trả đầy đủ snapshot xe `vehicleBrand`, `vehicleModel`, `vehicleLicensePlate`, địa chỉ `address`, `completedAt`, `reviewDeadline`, `isReviewed`).
 
 ### 10.3. Thợ xem lịch sử đơn `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `GET /api/providers/bookings?status=COMPLETED&page=0&size=10`
 - **Role:** `PROVIDER`
-- **Response:** `200 OK` (Phân trang danh sách đơn thợ đã thực hiện).
+- **Response:** `200 OK` (Phân trang danh sách đơn thợ đã kết thúc: `COMPLETED` / `CANCELLED`, trả đầy đủ snapshot xe, địa chỉ và mốc thanh toán).
 
 ### 10.4. Thợ xem doanh thu theo ngày `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `GET /api/providers/me/revenue?date=2026-11-22`
 - **Role:** `PROVIDER`
+- **Quy tắc tính doanh thu:**
+  1. Căn cứ theo **ngày thực nhận tiền** (`completedAt`), không tính theo ngày tạo đơn (`createdAt`).
+  2. Tính trên **quote `ACCEPTED` cuối cùng** của đơn `COMPLETED` (sau khi đổi quote/revise nhiều phiên bản).
+  3. Đơn bị hủy (`CANCELLED`) tuyệt đối không tính vào doanh thu ngày.
 - **Response:** `200 OK`
   ```json
   {
-    "revenueDate": "2026-11-22",
-    "totalBookings": 2,
+    "date": "2026-11-22",
     "totalRevenue": 480000.0,
+    "totalBookings": 2,
     "bookings": [
       {
-        "bookingId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "status": "COMPLETED",
+        "problemDescription": "Thủng lốp",
+        "address": "123 Nguyễn Huệ, Quận 1",
+        "vehicleBrand": "Honda",
+        "vehicleModel": "Air Blade",
+        "vehicleLicensePlate": "59-A1 12345",
         "completedAt": "2026-11-22T10:45:00",
-        "amount": 280000.0,
+        "reviewDeadline": "2026-11-29T10:45:00",
+        "isReviewed": true,
+        "totalAmount": 280000.0,
         "paymentMethod": "BANK_TRANSFER"
       }
     ]
   }
   ```
 
-### 10.5. Xem danh sách đánh giá của thợ `[ĐỀ XUẤT / CẦN BỔ SUNG]`
-- **Method & Path:** `GET /api/providers/{providerId}/reviews?page=0&size=10`
+### 10.5. Xem danh sách đánh giá của thợ `[ĐÃ KIỂM THỬ]`
+- **Method & Path:** `GET /api/providers/{providerId}/reviews`
 - **Role:** Công khai hoặc người dùng đã xác thực
-- **Response:** `200 OK` (Danh sách nhận xét, số sao, ngày đánh giá).
+- **Response:** `200 OK`
+  ```json
+  [
+    {
+      "id": "7fa85f64-5717-4562-b3fc-2c963f66afa7",
+      "bookingId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "providerId": "9fa85f64-5717-4562-b3fc-2c963f66afa8",
+      "rating": 5,
+      "comment": "Thợ rất nhiệt tình, tay nghề cao",
+      "customerName": "Nguyễn Văn Khách",
+      "createdAt": "2026-11-22T11:00:00"
+    }
+  ]
+  ```
 
 ---
 

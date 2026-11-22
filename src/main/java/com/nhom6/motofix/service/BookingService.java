@@ -62,6 +62,15 @@ public class BookingService {
     @Value("${booking.offer-ttl}")
     private Duration offerTtl;
 
+    private java.time.Clock clock = java.time.Clock.systemDefaultZone();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setClock(java.time.Clock clock) {
+        if (clock != null) {
+            this.clock = clock;
+        }
+    }
+
     @Transactional
     public BookingResponse createBooking(CreateBookingRequest request, UUID userId) {
         // 1. Khóa bi quan hàng User để tuần tự hóa các yêu cầu tạo booking đồng thời từ cùng tài khoản
@@ -534,9 +543,11 @@ public class BookingService {
             throw new ConflictException("Payment method is required");
         }
 
+        LocalDateTime now = LocalDateTime.now(clock);
         booking.setPaymentMethod(request.method());
         booking.setStatus(BookingStatus.COMPLETED);
-        booking.setUpdatedAt(LocalDateTime.now());
+        booking.setCompletedAt(now);
+        booking.setUpdatedAt(now);
         Booking saved = bookingRepository.save(booking);
         log.info("Provider {} confirmed payment via {} for booking {}, status moved to COMPLETED",
                 user.getId(), request.method(), bookingId);

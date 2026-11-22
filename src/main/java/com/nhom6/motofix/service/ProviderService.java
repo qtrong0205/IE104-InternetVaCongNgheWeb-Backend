@@ -35,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -64,6 +65,15 @@ public class ProviderService {
     private final RoleRepository roleRepository;
     private final UserRepository userRepository;
     private final BookingMapper bookingMapper;
+
+    private Clock clock = Clock.systemDefaultZone();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setClock(Clock clock) {
+        if (clock != null) {
+            this.clock = clock;
+        }
+    }
 
     @Transactional
     public ProviderProfileResponse uploadProfile(
@@ -269,7 +279,7 @@ public class ProviderService {
         UUID providerId = providerProfileRepository.findIdByUserId(user.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Provider profile not found"));
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(clock);
 
         // Đọc cả offer PENDING còn hạn và các offer ACCEPTED đang chờ khách chọn trên đơn SEARCHING
         return bookingOfferRepository.findIncomingOffersForProvider(providerId, now, BookingStatus.SEARCHING)
@@ -357,7 +367,7 @@ public class ProviderService {
         ProviderProfile provider = providerProfileRepository.findByUserId(user.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ thợ không tồn tại"));
 
-        LocalDate targetDate = (date != null) ? date : LocalDate.now();
+        LocalDate targetDate = (date != null) ? date : LocalDate.now(clock);
         LocalDateTime startOfDay = targetDate.atStartOfDay();
         LocalDateTime endOfDay = targetDate.atTime(LocalTime.MAX);
 

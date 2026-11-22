@@ -7,9 +7,11 @@ import com.nhom6.motofix.dto.respond.IncomingOfferResponse;
 import com.nhom6.motofix.dto.respond.ProviderProfileResponse;
 import com.nhom6.motofix.dto.respond.PublicProviderProfileResponse;
 import com.nhom6.motofix.dto.respond.ProviderRevenueResponse;
+import com.nhom6.motofix.dto.respond.ReviewResponse;
 import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.enums.BookingStatus;
 import com.nhom6.motofix.service.ProviderService;
+import com.nhom6.motofix.service.ReviewService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -32,6 +34,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ProviderController {
     private final ProviderService providerService;
+    private final ReviewService reviewService;
 
     @PostMapping("/register")
     public ResponseEntity<ProviderProfileResponse> uploadProfile(
@@ -107,5 +110,12 @@ public class ProviderController {
             @AuthenticationPrincipal User user
     ) {
         return ResponseEntity.ok(providerService.getOfferDetails(offerId, user));
+    }
+
+    @GetMapping("/{providerId}/reviews")
+    public ResponseEntity<List<ReviewResponse>> getProviderReviews(
+            @PathVariable UUID providerId
+    ) {
+        return ResponseEntity.ok(reviewService.getProviderReviews(providerId));
     }
 }

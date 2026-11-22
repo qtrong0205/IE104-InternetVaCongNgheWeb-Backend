@@ -106,12 +106,12 @@ Kết quả:
 | **Khách/Thợ: Xem các bản quote** | Nhóm 07, TC-07-32..35; `BE05StateMachineAndQuoteVersionTests` | `GET /api/bookings/{id}/quotes` | `BookingController:getQuotes` | [ĐẠT / TESTED] | Lấy danh sách phiên bản tăng dần; item lấy trạng thái hiệu lực tự động từ quote chứa nó. | **BE05 (Xong)** |
 | **Khách/Thợ: Chi tiết 1 bản quote** | Nhóm 07, TC-07-36..38; `QuoteNegotiationWorkflowTests` | `GET /api/bookings/{id}/quotes/{quoteId}` | `BookingController:getQuoteDetails` | [ĐẠT / TESTED] | Xem chi tiết phiên bản quote cụ thể, phân quyền khách chủ đơn và thợ được gán. | **BE05 (Xong)** |
 | **Thợ: Xác nhận hoàn thành sửa** | Nhóm 08, TC-08-01..08; `BE05StateMachineAndQuoteVersionTests` | `PATCH /api/bookings/{id}/complete` | `BookingController:completeBooking` | [ĐẠT / TESTED] | Kiểm tra đủ 3 điều kiện: thợ được gán, `IN_PROGRESS`, đúng 1 quote `ACCEPTED`, không có quote `PENDING`. Không yêu cầu payload checklist (checklist ở UI). Chuyển `WAITING_PAYMENT`. | **BE05 (Xong)** |
-| **Thợ: Xác nhận đã nhận tiền** | Nhóm 08, TC-08-09..16; `BookingCompletionAndReviewWorkflowTests:testConfirmPayment_*` | `PATCH /api/bookings/{id}/payment/confirm` | `BookingController:confirmPayment` | Đã test 7 ca nhận tiền mặt/CK | Đổi sang `COMPLETED`, lưu `paymentMethod`. **Cần bổ sung:** lưu mốc thời gian nhận tiền thực tế để tính doanh thu và hạn đánh giá 7 ngày. | **BE05** |
-| **Khách: Đánh giá thợ** | Nhóm 09, TC-09-01..09; `BookingCompletionAndReviewWorkflowTests:testCreateReview_*` | `POST /api/bookings/{id}/review` | `BookingController:createReview` | Đã test 8 ca | **Thiếu:** kiểm tra hạn đánh giá trong vòng 168 giờ (7 ngày) kể từ thời điểm hoàn tất nhận tiền. | **BE05** |
-| **Thợ/Khách: Xem đánh giá thợ** | Nhóm 09, TC-09-10..13 | `GET /api/providers/{providerId}/reviews` | *Chưa có mapping* | Không tìm thấy trong controller | **Thiếu hoàn toàn**. Màn hình thợ xem danh sách đánh giá của mình và khách xem đánh giá thợ khi chọn. | **BE05** |
-| **Khách: Lịch sử đơn** | Nhóm 09, TC-09-14..18; `BookingHistoryAndRevenueWorkflowTests:testGetCustomerBookings_*` | `GET /api/bookings` | `BookingController:getCustomerBookings` | Đã test 4 ca phân trang, lọc status | Trả COMPLETED/CANCELLED. BookingResponse thiếu thông tin xe (`vehicleBrand`, `vehicleModel`) và `address`. | **BE05** |
-| **Thợ: Lịch sử công việc** | Nhóm 09, TC-09-19..23; `BookingHistoryAndRevenueWorkflowTests:testGetProviderBookings_*` | `GET /api/providers/bookings` | `ProviderController:getProviderBookings` | Đã test 5 ca | Trả COMPLETED/CANCELLED. BookingResponse thiếu xe và địa chỉ cứu hộ. | **BE05** |
-| **Thợ: Xem doanh thu ngày** | Nhóm 09, TC-09-24..28; `BookingHistoryAndRevenueWorkflowTests:testGetMyRevenue_*` | `GET /api/providers/me/revenue` | `ProviderController:getProviderRevenue` | Đã test 4 ca theo ngày | BookingItem thiếu thông tin xe và mốc giờ thanh toán cụ thể. | **BE05** |
+| **Thợ: Xác nhận đã nhận tiền** | Nhóm 08, TC-08-09..16; `BE06PaymentRevenueAndReviewWorkflowTests` | `PATCH /api/bookings/{id}/payment/confirm` | `BookingController:confirmPayment` | [ĐẠT / TESTED] | Chuyển `COMPLETED`, lưu `paymentMethod`, lưu mốc thời gian nhận tiền thực tế `completedAt` một lần duy nhất. Chặn bấm lặp lại (`409 Conflict`). | **BE06 (Xong)** |
+| **Khách: Đánh giá thợ** | Nhóm 09, TC-09-01..09; `BE06PaymentRevenueAndReviewWorkflowTests` | `POST /api/bookings/{id}/review` | `BookingController:createReview` | [ĐẠT / TESTED] | Đánh giá 1 lần duy nhất trong 168 giờ (7 ngày) kể từ khi hoàn tất. Kiểm soát đồng hồ chính xác trước/đúng/sau hạn. Khóa bi quan `ProviderProfile` bảo đảm tính đúng `ratingCount` và `ratingAvg` khi có nhiều request đồng thời. | **BE06 (Xong)** |
+| **Thợ/Khách: Xem đánh giá thợ** | Nhóm 09, TC-09-10..13; `BE06PaymentRevenueAndReviewWorkflowTests` | `GET /api/providers/{providerId}/reviews` | `ProviderController:getProviderReviews` | [ĐẠT / TESTED] | Endpoint công khai trả danh sách đánh giá của thợ kèm điểm số, nhận xét, thời gian và tên khách hàng. | **BE06 (Xong)** |
+| **Khách: Lịch sử đơn** | Nhóm 09, TC-09-14..18; `BE06PaymentRevenueAndReviewWorkflowTests` | `GET /api/bookings` | `BookingController:getCustomerBookings` | [ĐẠT / TESTED] | Trả danh sách đơn đã kết thúc (`COMPLETED`/`CANCELLED`), kèm snapshot xe (`vehicleBrand`, `vehicleModel`, `vehicleLicensePlate`), địa chỉ `address`, `completedAt`, `reviewDeadline`, `isReviewed`. | **BE06 (Xong)** |
+| **Thợ: Lịch sử công việc** | Nhóm 09, TC-09-19..23; `BE06PaymentRevenueAndReviewWorkflowTests` | `GET /api/providers/bookings` | `ProviderController:getProviderBookings` | [ĐẠT / TESTED] | Trả danh sách đơn đã kết thúc (`COMPLETED`/`CANCELLED`), kèm snapshot xe, địa chỉ và mốc thanh toán `completedAt`. | **BE06 (Xong)** |
+| **Thợ: Xem doanh thu ngày** | Nhóm 09, TC-09-24..28; `BE06PaymentRevenueAndReviewWorkflowTests` | `GET /api/providers/me/revenue` | `ProviderController:getProviderRevenue` | [ĐẠT / TESTED] | Doanh thu tính theo ngày thực nhận (`completedAt`), tính trên quote `ACCEPTED` cuối cùng (sau khi revise). Đơn hủy không tính doanh thu. | **BE06 (Xong)** |
 | **Đồng bộ thời gian thực** | Nhóm 10, TC-10-01..05; Nhóm 11 Quyết định 03 | WebSocket / STOMP / Polling fallback | *Chưa có mapping* | Chưa triển khai | Ưu tiên đồng bộ trạng thái đơn và offer. Triển khai ở giai đoạn kết nối. | **BE06** |
 | **Nhắn tin (Chat) hai bên** | Nhóm 10, TC-10-06..10; V6 chat modal | Endpoint gửi/đọc tin nhắn | *Chưa có mapping* | Chưa triển khai | Mở sau khi khách chọn thợ, chuyển chỉ đọc khi hoàn tất/hủy. Triển khai sau khi đồng bộ trạng thái hoạt động ổn định. | **BE06** |
 
@@ -447,4 +447,56 @@ BE00 (Audit & Baseline) -> BE01 (Tài khoản & Phân quyền) -> BE02 (Hồ sơ
     *Giải pháp:* Thêm thuộc tính `(flushAutomatically = true, clearAutomatically = true)` vào annotation `@Modifying` của `expireAllOffersForBooking` và các truy vấn liên quan trong `BookingOfferRepository.java`.
   - *Trở ngại 2:* Nguy cơ database cũ có ràng buộc `NOT NULL` trên cột `status` của bảng `repair_quote_items` khiến lệnh insert entity mới (đã bỏ mapping status) bị vi phạm ràng buộc toàn vẹn.
     *Giải pháp:* Kiểm tra schema metadata thực tế trên database Supabase; soạn thảo migration script `V1.5.0__drop_repair_quote_items_status.sql` với lệnh drop constraint NOT NULL an toàn trước khi drop column; kiểm chứng lệnh insert thực tế chạy thành công trong test suite.
+
+---
+
+## 12. Biên bản bàn giao đợt BE06 · Thanh toán, doanh thu và đánh giá
+
+- **Thời điểm nghiệm thu:** 2026-11-22
+- **Trạng thái:** Hoàn tất trọn vẹn mọi yêu cầu của BE06.
+- **Kết quả kiểm thử:**
+  - `BE06PaymentRevenueAndReviewWorkflowTests`: **15/15 test cases PASS (100%)**.
+  - `BookingCompletionAndReviewWorkflowTests`: **23/23 test cases PASS (100%)**.
+  - `BookingHistoryAndRevenueWorkflowTests`: **13/13 test cases PASS (100%)**.
+  - Toàn bộ test suite repository: **217/217 test cases PASS (100% không suy thoái)**.
+  - Lệnh kiểm tra thực tế:
+    - `.\mvnw.cmd test -Dtest=BE06PaymentRevenueAndReviewWorkflowTests`
+    - `.\mvnw.cmd test`
+- **Các ca kiểm thử đã xác thực trong BE06 (`BE06PaymentRevenueAndReviewWorkflowTests`):**
+  1. `testConfirmPayment_Success_RecordedOnce`: Thợ xác nhận nhận tiền (`CASH` hoặc `BANK_TRANSFER`) thành công → Chuyển `COMPLETED`, lưu mốc `completedAt` một lần duy nhất, trả hạn đánh giá `reviewDeadline = completedAt + 168h`.
+  2. `testConfirmPayment_DuplicateCall_ThrowsConflict`: Bấm nhận tiền lặp lại (đơn đã `COMPLETED`) bị từ chối `409 Conflict`.
+  3. `testRevenue_DifferentCreationAndPaymentDates`: Đơn tạo ngày A và trả tiền ngày B: Doanh thu ghi nhận chính xác ở ngày B (ngày thực nhận tiền), ngày A có doanh thu = 0.
+  4. `testRevenue_LatestAcceptedQuoteAfterRevision`: Doanh thu tính theo quote `ACCEPTED` cuối cùng sau khi đổi quote (v1 SUPERSEDED 100k, v2 ACCEPTED 180k) → Ghi nhận đúng 180k, không bị cộng dồn thành 280k.
+  5. `testRevenue_CancelledBookingsExcluded`: Đơn hủy (`CANCELLED`) không được tính vào doanh thu ngày (doanh thu = 0, số đơn = 0).
+  6. `testReview_BeforeDeadline_Success`: Đánh giá tại trước hạn ($T + 168\text{h} - 1\text{s}$) bằng đồng hồ kiểm soát được `Clock` → Thành công, cập nhật điểm và lượt đánh giá của thợ.
+  7. `testReview_ExactlyAtDeadline_Conflict`: Đánh giá tại đúng hạn ($T + 168\text{h}$) → Bị từ chối `409 Conflict`.
+  8. `testReview_AfterDeadline_Conflict`: Đánh giá sau hạn ($T + 168\text{h} + 1\text{s}$) → Bị từ chối `409 Conflict`.
+  9. `testReview_DuplicateTabs_SecondCallThrowsConflict`: Hai tab của cùng khách hàng gửi đánh giá trùng cho cùng một đơn: Tab 1 thành công, Tab 2 nhận `409 Conflict` ("This booking has already been reviewed") nhờ ràng buộc unique constraint và kiểm tra trùng.
+  10. `testReview_MultipleCustomers_RatingStatsAccurate`: Hai khách hàng khác nhau đánh giá đồng thời cho cùng một thợ (5 sao và 3 sao): Khóa bi quan `ProviderProfile` bảo đảm tính toán chính xác tuyệt đối `ratingCount = 2`, `ratingAvg = 4.0`.
+  11. `testReview_StrangerOrProvider_ThrowsAccessDenied`: Khách lạ hoặc chính thợ cố tình đánh giá đơn của mình → Bị từ chối `403 Forbidden`.
+  12. `testReview_NotCompleted_ThrowsConflict`: Đơn chưa `COMPLETED` (đang ở `WAITING_PAYMENT` hoặc `IN_PROGRESS`) gọi đánh giá → Bị từ chối `409 Conflict`.
+  13. `testReview_InvalidRating_ThrowsBadRequest`: Điểm đánh giá ngoài khoảng [1..5] (0 sao hoặc 6 sao) → Bị từ chối `400 Bad Request`.
+  14. `testBookingDetails_ContainsAllPaymentAndReviewFields`: Chi tiết đơn và lịch sử chứa đầy đủ snapshot xe (`vehicleBrand`, `vehicleModel`, `vehicleLicensePlate`), địa chỉ cứu hộ `address`, `completedAt`, `reviewDeadline`, `totalAmount`, và cờ `isReviewed`.
+  15. `testGetProviderReviews_Success`: API công khai `GET /api/providers/{providerId}/reviews` trả về danh sách đánh giá của thợ kèm `rating`, `comment`, `customerName`, `bookingId`, `createdAt`.
+- **Tập tin đã thay đổi & tạo mới:**
+  - `src/main/java/com/nhom6/motofix/config/AppConfig.java` *(Mới)*: Khai báo `@Bean public Clock clock() { return Clock.systemDefaultZone(); }` hỗ trợ dependency injection đồng hồ thời gian thực và mock thời gian kiểm thử.
+  - `src/main/java/com/nhom6/motofix/entity/Booking.java`: Thêm cột `@Column(name = "completed_at") private LocalDateTime completedAt;` và quan hệ `@OneToOne(mappedBy = "booking", fetch = FetchType.LAZY) private Review review;`.
+  - `src/main/java/com/nhom6/motofix/dto/respond/BookingResponse.java`: Bổ sung `LocalDateTime completedAt`, `LocalDateTime reviewDeadline`, `Boolean isReviewed` cùng các constructor tương thích ngược.
+  - `src/main/java/com/nhom6/motofix/mapper/BookingMapper.java`: Map `completedAt`, tính `reviewDeadline = completedAt + 168h`, tính `isReviewed = (booking.getReview() != null)`, và lấy đúng `totalAmount` từ quote `ACCEPTED` phiên bản mới nhất.
+  - `src/main/java/com/nhom6/motofix/dto/respond/ReviewResponse.java`: Bổ sung trường `String customerName` và method ánh xạ từ `Review.booking.customer.fullName`.
+  - `src/main/java/com/nhom6/motofix/repository/BookingRepository.java`: Cập nhật JPQL doanh thu căn cứ theo `COALESCE(b.completedAt, b.updatedAt, b.createdAt) >= :startOfDay AND ... <= :endOfDay`.
+  - `src/main/java/com/nhom6/motofix/repository/ReviewRepository.java`: Thêm truy vấn `findByProviderIdOrderByCreatedAtDesc(UUID providerId)`.
+  - `src/main/java/com/nhom6/motofix/service/BookingService.java`: Inject `Clock`, ghi nhận `completedAt = LocalDateTime.now(clock)` một lần duy nhất khi chuyển `COMPLETED`.
+  - `src/main/java/com/nhom6/motofix/service/ReviewService.java`: Inject `Clock`, validate rating 1..5, kiểm tra hạn 168 giờ (`now >= deadline` → 409 Conflict), khóa bi quan `ProviderProfile` tính lại rating stats chính xác, cập nhật quan hệ hai chiều `booking.setReview(review)`, bổ sung `getProviderReviews(providerId)`.
+  - `src/main/java/com/nhom6/motofix/service/ProviderService.java`: Inject `Clock`, lấy doanh thu theo `LocalDate.now(clock)`.
+  - `src/main/java/com/nhom6/motofix/controller/ProviderController.java`: Thêm endpoint công khai `GET /api/providers/{providerId}/reviews`.
+  - `src/test/java/com/nhom6/motofix/BE06PaymentRevenueAndReviewWorkflowTests.java` *(Mới)*: Bộ test 15 ca kiểm thử chuyên sâu cho toàn bộ yêu cầu của đợt BE06.
+  - `docs/motofix/api-contract.md`: Nâng phiên bản lên 1.6.0, cập nhật Nhóm 08, 09 sang `[ĐÃ KIỂM THỬ]`.
+  - `docs/motofix/audit.md`: Cập nhật bảng đối chiếu và biên bản bàn giao BE06.
+- **Trở ngại & Giải pháp:**
+  - *Trở ngại 1:* Trong giao dịch kiểm thử `@Transactional`, khi `createReview` lưu đối tượng `Review`, do `Booking` là phía nghịch đảo (`mappedBy = "booking"`), nếu không gán thủ công `booking.setReview(review)` trong phiên làm việc thì cache cấp 1 của Hibernate vẫn giữ `booking.getReview() == null`.
+    *Giải pháp:* Thêm lệnh gán quan hệ `booking.setReview(review)` ngay sau khi `reviewRepository.saveAndFlush(review)` trong `ReviewService.java`, bảo đảm tính nhất quán tức thì trên cùng transaction.
+  - *Trở ngại 2:* Phương thức tính doanh thu cần lấy đúng số tiền của quote `ACCEPTED` cuối cùng kể cả khi đơn đã qua nhiều lần revise (v1 SUPERSEDED, v2 ACCEPTED).
+    *Giải pháp:* Áp dụng sắp xếp theo `version` giảm dần trong stream lấy `totalAmount` (`sorted(Comparator.comparing(RepairQuote::getVersion, Comparator.nullsLast(Comparator.reverseOrder())))`), đảm bảo chỉ lấy đúng số tiền đã chốt của quote có hiệu lực cao nhất.
+
 

@@ -62,6 +62,9 @@ public class Booking {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @Column(name = "completed_at")
+    private LocalDateTime completedAt;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "customer_id", nullable = false)
     private User customer;
@@ -78,6 +81,9 @@ public class Booking {
 
     @OneToMany(mappedBy = "booking", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<BookingMedia> media = new ArrayList<>();
+
+    @OneToOne(mappedBy = "booking", fetch = FetchType.LAZY)
+    private Review review;
 
     @PrePersist
     protected void onCreate() {

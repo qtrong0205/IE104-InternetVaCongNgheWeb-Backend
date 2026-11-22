@@ -18,6 +18,8 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
 
     List<Review> findByProviderId(UUID providerId);
 
+    List<Review> findByProviderIdOrderByCreatedAtDesc(UUID providerId);
+
     @Query("SELECT COUNT(r) FROM Review r WHERE r.provider.id = :providerId")
     int countByProviderId(@Param("providerId") UUID providerId);
 

@@ -66,7 +66,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             Pageable pageable
     );
 
-    @Query("SELECT DISTINCT b FROM Booking b LEFT JOIN FETCH b.quotes q WHERE b.provider.id = :providerId AND b.status = :status AND COALESCE(b.updatedAt, b.createdAt) >= :startOfDay AND COALESCE(b.updatedAt, b.createdAt) <= :endOfDay")
+    @Query("SELECT DISTINCT b FROM Booking b LEFT JOIN FETCH b.quotes q WHERE b.provider.id = :providerId AND b.status = :status AND COALESCE(b.completedAt, b.updatedAt, b.createdAt) >= :startOfDay AND COALESCE(b.completedAt, b.updatedAt, b.createdAt) <= :endOfDay")
     List<Booking> findCompletedBookingsWithQuotesByProviderAndDateRange(
             @Param("providerId") UUID providerId,
             @Param("status") BookingStatus status,
