@@ -36,8 +36,8 @@ build/
 # Environment variables
 .env
 
-# Interface Test
-GiaoDienTest.html
 
 # Requirement
-RequirementChiTiet.md
+MotoFix_UI_Demo_V6/
+MotoFix-Requirements-Database/
+
