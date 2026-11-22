@@ -14,6 +14,7 @@ import com.nhom6.motofix.service.ProviderService;
 import com.nhom6.motofix.websocket.BookingSyncApplicationEvent;
 import com.nhom6.motofix.websocket.StompAuthChannelInterceptor;
 import com.nhom6.motofix.websocket.WebSocketEventBridge;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,12 +29,16 @@ import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+
+import java.util.Set;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -96,6 +101,8 @@ public class BE07WebSocketSyncWorkflowTests {
 
     @BeforeEach
     void setUp() {
+        bookingService.setClock(Clock.systemDefaultZone());
+        providerService.setClock(Clock.systemDefaultZone());
         webSocketEventBridge.clearCapturedEvents();
 
         // 1. Tạo Customer 1
@@ -322,6 +329,38 @@ public class BE07WebSocketSyncWorkflowTests {
                 stompAuthChannelInterceptor.preSend(message, mockChannel));
     }
 
+    @Test
+    @DisplayName("BE07-09B: Admin cố tình subscribe topic cá nhân /topic/bookings/{id} hoặc /topic/providers/{id}/offers -> Bị từ chối 403 (Giới hạn admin đúng phạm vi duyệt hồ sơ)")
+    void testSubscribe_AdminRestrictedFromPersonalTopics_Denied() {
+        User adminUser = new User();
+        adminUser.setId(UUID.randomUUID());
+        adminUser.setEmail("admin@motofix.test");
+        adminUser.setCurrentRole("ADMIN");
+        Role adminRole = new Role();
+        adminRole.setName("ADMIN");
+        adminUser.setRoles(Set.of(adminRole));
+
+        // 1. Admin subscribe /topic/bookings/{bookingId} -> Bị chặn
+        StompHeaderAccessor bookingAccessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        bookingAccessor.setDestination("/topic/bookings/" + booking1.getId());
+        bookingAccessor.setUser(new UsernamePasswordAuthenticationToken(adminUser, null, List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+        Message<byte[]> bookingMsg = MessageBuilder.createMessage(new byte[0], bookingAccessor.getMessageHeaders());
+
+        AccessDeniedException ex1 = assertThrows(AccessDeniedException.class, () ->
+                stompAuthChannelInterceptor.preSend(bookingMsg, mockChannel));
+        assertTrue(ex1.getMessage().contains("not authorized"));
+
+        // 2. Admin subscribe /topic/providers/{id}/offers -> Bị chặn
+        StompHeaderAccessor providerAccessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        providerAccessor.setDestination("/topic/providers/" + providerProfile1.getId() + "/offers");
+        providerAccessor.setUser(new UsernamePasswordAuthenticationToken(adminUser, null, List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+        Message<byte[]> provMsg = MessageBuilder.createMessage(new byte[0], providerAccessor.getMessageHeaders());
+
+        AccessDeniedException ex2 = assertThrows(AccessDeniedException.class, () ->
+                stompAuthChannelInterceptor.preSend(provMsg, mockChannel));
+        assertTrue(ex2.getMessage().contains("not authorized"));
+    }
+
     // =========================================================================
     // 3. PHÁT SỰ KIỆN SAU COMMIT & CHỐNG PHÁT KHI ROLLBACK
     // =========================================================================
@@ -405,7 +444,7 @@ public class BE07WebSocketSyncWorkflowTests {
     }
 
     @Test
-    @DisplayName("BE07-13: Mô phỏng Client nhận sự kiện muộn hoặc lặp -> Kiểm tra cơ chế chống lùi bước trạng thái")
+    @DisplayName("BE07-13: Mô phỏng Client nhận sự kiện muộn hoặc lặp -> Kiểm tra cơ chế chống lùi bước trạng thái & cập nhật nhiều offer trong cùng SEARCHING")
     void testStaleOrDuplicateEvent_DoesNotRegressStatus() {
         // Giả sử phía Client đang ở trạng thái COMPLETED (thứ tự 7)
         BookingStatus currentClientStatus = BookingStatus.COMPLETED;
@@ -442,6 +481,72 @@ public class BE07WebSocketSyncWorkflowTests {
 
         boolean isDuplicateOrder = duplicatePayload.statusOrder() <= currentClientOrder;
         assertTrue(isDuplicateOrder, "Sự kiện lặp lại không làm thay đổi trạng thái tiến trình của client");
+
+        // KIỂM TRA QUY TẮC: Trong cùng trạng thái SEARCHING (thứ tự 1), nhiều offer thay đổi (T1 accept, T2 accept, T1 expire)
+        // Client đang ở SEARCHING
+        BookingStatus searchingStatus = BookingStatus.SEARCHING;
+        int searchingOrder = SyncEventPayload.calculateStatusOrder(searchingStatus);
+        assertEquals(1, searchingOrder);
+
+        UUID offer1Id = UUID.randomUUID();
+        UUID offer2Id = UUID.randomUUID();
+
+        SyncEventPayload offer1Accepted = SyncEventPayload.of(
+                SyncEventType.OFFER_ACCEPTED,
+                booking1.getId(),
+                offer1Id,
+                BookingStatus.SEARCHING,
+                null,
+                providerUser1.getId(),
+                "Thợ 1 đồng ý",
+                offer1Id,
+                "/api/bookings/" + booking1.getId() + "/offers"
+        );
+
+        SyncEventPayload offer2Accepted = SyncEventPayload.of(
+                SyncEventType.OFFER_ACCEPTED,
+                booking1.getId(),
+                offer2Id,
+                BookingStatus.SEARCHING,
+                null,
+                providerUser2.getId(),
+                "Thợ 2 đồng ý",
+                offer2Id,
+                "/api/bookings/" + booking1.getId() + "/offers"
+        );
+
+        SyncEventPayload offer1Expired = SyncEventPayload.of(
+                SyncEventType.OFFER_EXPIRED,
+                booking1.getId(),
+                offer1Id,
+                BookingStatus.SEARCHING,
+                null,
+                null,
+                "Thợ 1 tắt online -> offer 1 hết hạn",
+                offer1Id,
+                "/api/bookings/" + booking1.getId() + "/offers"
+        );
+
+        // Quy tắc client: Với các sự kiện OFFER_*, khi client vẫn ở SEARCHING (searchingOrder <= 1),
+        // KHÔNG discard theo statusOrder, mà cập nhật danh sách offer (thêm offer 1, thêm offer 2, xóa offer 1)
+        java.util.Set<UUID> visibleOffers = new java.util.HashSet<>();
+
+        // Nhận offer 1
+        if (offer1Accepted.eventType() == SyncEventType.OFFER_ACCEPTED && searchingOrder <= 1) {
+            visibleOffers.add(offer1Accepted.offerId());
+        }
+        // Nhận offer 2
+        if (offer2Accepted.eventType() == SyncEventType.OFFER_ACCEPTED && searchingOrder <= 1) {
+            visibleOffers.add(offer2Accepted.offerId());
+        }
+        assertEquals(2, visibleOffers.size(), "Khách phải thấy đủ cả hai offer khi cả hai thợ đồng ý");
+
+        // Nhận offer 1 expired (thợ 1 tắt online / logout)
+        if (offer1Expired.eventType() == SyncEventType.OFFER_EXPIRED && searchingOrder <= 1) {
+            visibleOffers.remove(offer1Expired.offerId());
+        }
+        assertEquals(1, visibleOffers.size(), "Sau khi thợ 1 tắt online/hết hạn, offer 1 phải biến mất khỏi danh sách của khách");
+        assertTrue(visibleOffers.contains(offer2Id), "Offer của thợ 2 vẫn còn hiệu lực");
     }
 
     // =========================================================================
@@ -479,9 +584,15 @@ public class BE07WebSocketSyncWorkflowTests {
                 bookingService.confirmPayment(booking1.getId(), new ConfirmPaymentRequest(PaymentMethod.CASH), providerUser1));
 
         // 3. Kiểm tra doanh thu trong ngày: Chính xác 180k, đúng 1 đơn, không bị nhân đôi thành 360k
-        ProviderRevenueResponse revenue = providerService.getProviderRevenue(providerUser1, LocalDate.now());
+        ProviderRevenueResponse revenue = providerService.getProviderRevenue(providerUser1, null);
         assertNotNull(revenue);
         assertEquals(0, BigDecimal.valueOf(180000).compareTo(revenue.totalRevenue()));
         assertEquals(1L, revenue.totalBookings());
+    }
+
+    @AfterEach
+    void tearDown() {
+        bookingService.setClock(Clock.systemDefaultZone());
+        providerService.setClock(Clock.systemDefaultZone());
     }
 }

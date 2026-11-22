@@ -12,6 +12,7 @@ public record SyncEventPayload(
         UUID eventId,
         SyncEventType eventType,
         UUID bookingId,
+        UUID offerId,
         BookingStatus status,
         Integer statusOrder,
         Integer quoteVersion,
@@ -47,10 +48,25 @@ public record SyncEventPayload(
             Object data,
             String snapshotUrl
     ) {
+        return of(eventType, bookingId, null, status, quoteVersion, actorId, message, data, snapshotUrl);
+    }
+
+    public static SyncEventPayload of(
+            SyncEventType eventType,
+            UUID bookingId,
+            UUID offerId,
+            BookingStatus status,
+            Integer quoteVersion,
+            UUID actorId,
+            String message,
+            Object data,
+            String snapshotUrl
+    ) {
         return new SyncEventPayload(
                 UUID.randomUUID(),
                 eventType,
                 bookingId,
+                offerId,
                 status,
                 calculateStatusOrder(status),
                 quoteVersion,

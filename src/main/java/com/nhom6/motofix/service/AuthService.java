@@ -8,6 +8,7 @@ import com.nhom6.motofix.dto.request.ResetPasswordWithTokenRequest;
 import com.nhom6.motofix.dto.respond.LoginResponse;
 import com.nhom6.motofix.dto.respond.MessageResponse;
 import com.nhom6.motofix.dto.respond.RegisterResponse;
+import com.nhom6.motofix.entity.BookingOffer;
 import com.nhom6.motofix.entity.ProviderProfile;
 import com.nhom6.motofix.entity.Role;
 import com.nhom6.motofix.entity.User;
@@ -46,6 +47,7 @@ public class AuthService {
     private final ProviderProfileRepository providerProfileRepository;
     private final BookingOfferRepository bookingOfferRepository;
     private final EmailService emailService;
+    private final WebSocketSyncService webSocketSyncService;
 
     @Transactional
     public RegisterResponse register(RegisterRequest request) {
@@ -151,6 +153,11 @@ public class AuthService {
         // 2. Nếu là thợ: đặt offline và expire offer chưa được chọn cùng giao dịch
         ProviderProfile profile = providerProfileRepository.findByUserId(user.getId()).orElse(null);
         if (profile != null) {
+            List<BookingOffer> waitingOffers = bookingOfferRepository.findWaitingOffersForProvider(
+                    profile.getId(),
+                    List.of(OfferStatus.PENDING, OfferStatus.ACCEPTED),
+                    BookingStatus.SEARCHING
+            );
             profile.setActive(false);
             providerProfileRepository.saveAndFlush(profile);
 
@@ -160,6 +167,10 @@ public class AuthService {
                     List.of(OfferStatus.PENDING, OfferStatus.ACCEPTED),
                     BookingStatus.SEARCHING
             );
+            for (BookingOffer o : waitingOffers) {
+                webSocketSyncService.notifyOfferExpired(profile.getId(), o.getId(), o.getBooking().getId());
+                webSocketSyncService.notifyOfferExpiredForBooking(o.getBooking().getId(), o.getId());
+            }
             log.info("Provider {} logged out: set offline and expired waiting offers", profile.getId());
         }
 

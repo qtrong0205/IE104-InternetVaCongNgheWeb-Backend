@@ -76,4 +76,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 
     @Query("SELECT b FROM Booking b LEFT JOIN FETCH b.customer LEFT JOIN FETCH b.provider p LEFT JOIN FETCH p.user WHERE b.id = :id")
     Optional<Booking> findByIdWithCustomerAndProvider(@Param("id") UUID id);
+
+    @Query("SELECT b FROM Booking b LEFT JOIN FETCH b.customer LEFT JOIN FETCH b.provider p LEFT JOIN FETCH p.user LEFT JOIN FETCH b.media WHERE b.id = :id")
+    Optional<Booking> findByIdWithDetails(@Param("id") UUID id);
 }

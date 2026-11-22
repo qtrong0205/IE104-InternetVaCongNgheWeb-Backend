@@ -5,6 +5,7 @@ import com.nhom6.motofix.dto.request.UpdateUserProfileRequest;
 import com.nhom6.motofix.dto.respond.SwitchRoleResponse;
 import com.nhom6.motofix.dto.respond.UserProfileResponse;
 import com.nhom6.motofix.entity.Booking;
+import com.nhom6.motofix.entity.BookingOffer;
 import com.nhom6.motofix.entity.ProviderProfile;
 import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.enums.ApprovalStatus;
@@ -58,6 +59,7 @@ public class UserService {
     private final BookingOfferRepository bookingOfferRepository;
     private final ProviderProfileRepository providerProfileRepository;
     private final JwtService jwtService;
+    private final WebSocketSyncService webSocketSyncService;
 
     /**
      * API 3: Xem thông tin cá nhân của người dùng đang đăng nhập.
@@ -173,6 +175,11 @@ public class UserService {
         if ("CUSTOMER".equals(targetRole)) {
             ProviderProfile profile = providerProfileRepository.findByUserId(user.getId()).orElse(null);
             if (profile != null) {
+                List<BookingOffer> waitingOffers = bookingOfferRepository.findWaitingOffersForProvider(
+                        profile.getId(),
+                        List.of(OfferStatus.PENDING, OfferStatus.ACCEPTED),
+                        BookingStatus.SEARCHING
+                );
                 profile.setActive(false);
                 providerProfileRepository.saveAndFlush(profile);
 
@@ -182,6 +189,10 @@ public class UserService {
                         List.of(OfferStatus.PENDING, OfferStatus.ACCEPTED),
                         BookingStatus.SEARCHING
                 );
+                for (BookingOffer o : waitingOffers) {
+                    webSocketSyncService.notifyOfferExpired(profile.getId(), o.getId(), o.getBooking().getId());
+                    webSocketSyncService.notifyOfferExpiredForBooking(o.getBooking().getId(), o.getId());
+                }
                 log.info("Provider {} switched to CUSTOMER: set offline and expired pending/accepted offers", profile.getId());
             }
         }

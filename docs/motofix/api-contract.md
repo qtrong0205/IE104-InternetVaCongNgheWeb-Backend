@@ -846,38 +846,26 @@
 - **Giao thức:** STOMP over WebSocket.
 - **Xác thực kết nối (Authentication on CONNECT):**
   - Header trong frame `CONNECT`: `Authorization: Bearer <jwt_token>` (hoặc header `token` / `passcode`).
-  - `StompAuthChannelInterceptor` trích xuất `userId`, kiểm tra `tokenVersion` và trạng thái `active` của tài khoản, sau đó gán `Principal` cho phiên STOMP.
+  - `StompAuthChannelInterceptor` trích xuất `userId`, kiểm tra `tokenVersion` và trạng thái `active` của tài khoản, sau đó gán `Principal` cho phiên STOMP. Phiên cũ sau logout (khi `tokenVersion` tăng) sẽ bị từ chối kết nối ngay lập tức (`BadCredentialsException`).
 - **Phân quyền đăng ký kênh (Authorization on SUBSCRIBE):**
   1. `/topic/bookings/{bookingId}`:
-     - Chỉ cho phép: Khách hàng chủ đơn (`booking.customer_id == user.id`), Thợ được phân công (`booking.provider.user_id == user.id`), hoặc `ADMIN`.
-     - Người ngoài (khách lạ, thợ khác, hoặc thợ chỉ mới nhận offer nhưng chưa được chọn) cố tình subscribe sẽ bị từ chối và ném `403 AccessDeniedException`.
+     - Chỉ cho phép: Khách hàng chủ đơn (`booking.customer_id == user.id`) hoặc Thợ được phân công (`booking.provider.user_id == user.id`).
+     - **Giới hạn Admin đúng phạm vi duyệt hồ sơ:** Quản trị viên (`ADMIN`) KHÔNG được phép subscribe vào kênh cứu hộ cá nhân này.
+     - Người ngoài (khách lạ, thợ khác, thợ chỉ mới nhận offer nhưng chưa được chọn, hoặc admin) cố tình subscribe sẽ bị từ chối và ném `403 AccessDeniedException` (server tự động đóng kết nối).
   2. `/topic/customers/{userId}/bookings`:
-     - Chỉ người dùng sở hữu `userId` hoặc `ADMIN` được phép subscribe.
+     - Chỉ chính người dùng sở hữu `userId` được phép subscribe. Admin và người ngoài bị từ chối.
   3. `/topic/providers/{providerId}/offers`:
-     - Chỉ thợ sở hữu `providerProfileId` hoặc `ADMIN` được phép subscribe để nhận offer mới và thông báo hết hạn.
+     - Chỉ chính thợ sở hữu `providerProfileId` được phép subscribe để nhận offer mới và thông báo hết hạn. Admin và người ngoài bị từ chối.
 - **Cơ chế phát sự kiện sau COMMIT (`AFTER_COMMIT`):**
   - Tất cả các sự kiện đồng bộ được phát qua `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)`.
   - Nếu giao dịch gặp lỗi và rollback (ví dụ lỗi kiểm tra nghiệp vụ, vi phạm ràng buộc), **tuyệt đối không phát sự kiện ra WebSocket**.
-- **Danh mục sự kiện đồng bộ (`SyncEventType`):**
-  - `OFFER_NEW`: Phát tới `/topic/providers/{providerId}/offers` khi có offer cứu hộ mới trong vùng quét.
-  - `OFFER_ACCEPTED`: Phát tới `/topic/bookings/{bookingId}` khi thợ đồng ý nhận offer và gửi báo giá ước tính.
-  - `OFFER_DECLINED`: Phát tới `/topic/bookings/{bookingId}` khi thợ từ chối offer.
-  - `OFFER_EXPIRED`: Phát tới `/topic/providers/{providerId}/offers` khi offer hết hạn hoặc bị hủy do khách chọn thợ khác.
-  - `PROVIDER_SELECTED`: Phát tới `/topic/bookings/{bookingId}` và `/topic/providers/{providerId}/offers` khi khách chọn thợ.
-  - `BOOKING_STATUS_CHANGED`: Phát tới `/topic/bookings/{bookingId}` khi trạng thái di chuyển/khám xe thay đổi (`PROVIDER_EN_ROUTE`, `INSPECTING`).
-  - `QUOTE_NEW`: Phát tới `/topic/bookings/{bookingId}` khi thợ gửi chẩn đoán báo giá v1 (`PENDING`).
-  - `QUOTE_REVISED`: Phát tới `/topic/bookings/{bookingId}` khi thợ cập nhật phiên bản báo giá mới (`PENDING`).
-  - `QUOTE_ACCEPTED`: Phát tới `/topic/bookings/{bookingId}` khi khách chấp nhận báo giá (chuyển `IN_PROGRESS`).
-  - `QUOTE_ROLLBACK`: Phát tới `/topic/bookings/{bookingId}` khi thợ rollback báo giá phát sinh về bản `ACCEPTED` trước đó.
-  - `BOOKING_COMPLETED_REPAIR`: Phát tới `/topic/bookings/{bookingId}` khi thợ hoàn thành sửa chữa (chuyển `WAITING_PAYMENT`).
-  - `PAYMENT_CONFIRMED`: Phát tới `/topic/bookings/{bookingId}` khi thợ xác nhận nhận tiền (chuyển `COMPLETED`).
-  - `BOOKING_CANCELLED`: Phát tới `/topic/bookings/{bookingId}` khi đơn bị hủy bởi khách hoặc thợ.
 - **Cấu trúc Payload chuẩn (`SyncEventPayload`):**
   ```json
   {
     "eventId": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6",
     "eventType": "BOOKING_STATUS_CHANGED",
     "bookingId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "offerId": "7fa85f64-5717-4562-b3fc-2c963f66afa7",
     "status": "PROVIDER_EN_ROUTE",
     "statusOrder": 3,
     "quoteVersion": null,
@@ -888,7 +876,7 @@
     "snapshotUrl": "/api/bookings/3fa85f64-5717-4562-b3fc-2c963f66afa6"
   }
   ```
-- **Cơ chế chống lùi bước trạng thái & Chống nhân đôi doanh thu:**
+- **Cơ chế chống lặp, chống lùi bước trạng thái & cập nhật nhiều offer:**
   1. *Thứ tự trạng thái đơn điệu (`statusOrder`):*
      - `SEARCHING = 1`
      - `SELECTED_PROVIDER / PROVIDER_SELECTED = 2`
@@ -898,12 +886,39 @@
      - `WAITING_PAYMENT = 6`
      - `COMPLETED = 7`
      - `CANCELLED = 8`
-     - Client so sánh `event.statusOrder <= client.currentStatusOrder` để phát hiện và tự động bỏ qua các sự kiện cũ/muộn hoặc sự kiện lặp, ngăn ngừa tình trạng lùi bước màn hình giao diện.
-  2. *Khôi phục trạng thái (Reconnect Snapshot):*
-     - Khi mất kết nối mạng và kết nối lại, Client gọi HTTP `GET` đến trường `snapshotUrl` (`/api/bookings/active` hoặc `/api/bookings/{id}`) để lấy lại trạng thái chuẩn xác nhất từ cơ sở dữ liệu backend.
-  3. *Chống nhân đôi doanh thu:*
+  2. *Quy tắc chống lặp mạng:* Client duy trì tập hợp `processedEventIds` (LRU cache hoặc Set với giới hạn kích thước); nếu `processedEventIds.contains(event.eventId)`, bỏ qua ngay lập tức.
+  3. *Quy tắc cập nhật trạng thái đơn (Booking Status Events):*
+     - Với `BOOKING_STATUS_CHANGED`, `PROVIDER_SELECTED`, `BOOKING_CANCELLED`:
+       - Nếu `event.statusOrder < client.currentStatusOrder`: Sự kiện muộn do lag mạng -> Bỏ qua an toàn.
+       - Nếu `event.statusOrder > client.currentStatusOrder`: Chuyển sang trạng thái mới.
+  4. *Quy tắc nhiều offer thay đổi trong cùng `SEARCHING`:*
+     - Các sự kiện `OFFER_ACCEPTED`, `OFFER_DECLINED`, `OFFER_EXPIRED` đều diễn ra khi booking ở `SEARCHING` (`statusOrder == 1`).
+     - Khi client đang ở `SEARCHING` (`currentStatusOrder <= 1`): **KHÔNG ĐƯỢC BỎ QUA** dựa trên `statusOrder`. Client cập nhật danh sách offer (thêm offer khi `OFFER_ACCEPTED`, loại bỏ offer theo `offerId` khi `OFFER_EXPIRED` hoặc `OFFER_DECLINED`), hoặc gọi HTTP `GET /api/bookings/{id}/offers` để tải lại danh sách.
+     - Khi client đã chuyển sang chọn thợ (`currentStatusOrder > 1`), toàn bộ sự kiện offer cũ mới bị discard.
+  5. *Khôi phục trạng thái (Reconnect Snapshot):*
+     - Khi mất kết nối mạng và kết nối lại, Client gọi HTTP `GET` có xác thực Bearer token đến trường `snapshotUrl` (`/api/bookings/{id}` hoặc `/api/bookings/{id}/offers`) để lấy lại trạng thái chuẩn xác nhất từ cơ sở dữ liệu backend.
+  6. *Chống nhân đôi doanh thu:*
      - Lệnh xác nhận thanh toán (`PATCH /api/bookings/{id}/payment/confirm`) kiểm tra nghiêm ngặt `WAITING_PAYMENT`; thao tác lặp lại bị từ chối `409 Conflict`.
      - Doanh thu backend chỉ ghi nhận một lần duy nhất theo `completedAt` và quote `ACCEPTED` cuối cùng của đơn.
+
+- **Bảng ma trận: Thao tác → Ai nhận → Topic → Event → API tải lại (Snapshot URL):**
+
+| Thao tác nghiệp vụ | Ai nhận | Topic | Sự kiện (`eventType`) | API dùng để tải lại (Snapshot URL) |
+| :--- | :--- | :--- | :--- | :--- |
+| Khách tạo đơn cứu hộ / Quét vòng mới | Thợ đủ điều kiện gần nhất | `/topic/providers/{providerId}/offers` | `OFFER_NEW` | `GET /api/providers/incoming-offers/{offerId}` |
+| Thợ đồng ý offer & báo giá sơ bộ | Khách chủ đơn | `/topic/bookings/{bookingId}` | `OFFER_ACCEPTED` | `GET /api/bookings/{bookingId}/offers` |
+| Thợ từ chối offer | Khách chủ đơn | `/topic/bookings/{bookingId}` | `OFFER_DECLINED` | `GET /api/bookings/{bookingId}/offers` |
+| Thợ tắt online / Đăng xuất / Chuyển vai | Khách chủ đơn & Thợ | Khách: `/topic/bookings/{bookingId}`<br>Thợ: `/topic/providers/{providerId}/offers` | `OFFER_EXPIRED` | Khách: `GET /api/bookings/{bookingId}/offers`<br>Thợ: `GET /api/providers/incoming-offers` |
+| Khách chọn thợ (T1) | Khách, Thợ được chọn (T1), Thợ khác (T2) | Khách: `/topic/bookings/{bookingId}`<br>T1: `/topic/providers/{t1Id}/offers` & `/topic/bookings/{bookingId}`<br>T2: `/topic/providers/{t2Id}/offers` | T1 & Khách: `PROVIDER_SELECTED`<br>T2: `OFFER_EXPIRED` | Khách/T1: `GET /api/bookings/{bookingId}`<br>T2: `GET /api/providers/incoming-offers` |
+| Thợ xác nhận đang đến nơi | Khách & Thợ phụ trách | `/topic/bookings/{bookingId}` | `BOOKING_STATUS_CHANGED` (`status: PROVIDER_EN_ROUTE`) | `GET /api/bookings/{bookingId}` |
+| Thợ xác nhận đã đến nơi khám xe | Khách & Thợ phụ trách | `/topic/bookings/{bookingId}` | `BOOKING_STATUS_CHANGED` (`status: INSPECTING`) | `GET /api/bookings/{bookingId}` |
+| Thợ gửi báo giá v1 (`PENDING`) | Khách & Thợ phụ trách | `/topic/bookings/{bookingId}` | `QUOTE_NEW` | `GET /api/bookings/{bookingId}/quotes` |
+| Thợ sửa báo giá v2+ (`PENDING`) | Khách & Thợ phụ trách | `/topic/bookings/{bookingId}` | `QUOTE_REVISED` | `GET /api/bookings/{bookingId}/quotes` |
+| Khách chấp nhận báo giá | Khách & Thợ phụ trách | `/topic/bookings/{bookingId}` | `QUOTE_ACCEPTED` (`status: IN_PROGRESS`) | `GET /api/bookings/{bookingId}` & `/quotes` |
+| Thợ hủy bản báo giá phát sinh | Khách & Thợ phụ trách | `/topic/bookings/{bookingId}` | `QUOTE_ROLLBACK` | `GET /api/bookings/{bookingId}/quotes` |
+| Thợ xác nhận hoàn tất sửa xe | Khách & Thợ phụ trách | `/topic/bookings/{bookingId}` | `BOOKING_COMPLETED_REPAIR` (`status: WAITING_PAYMENT`) | `GET /api/bookings/{bookingId}` |
+| Thợ xác nhận đã nhận tiền | Khách & Thợ phụ trách | `/topic/bookings/{bookingId}` | `PAYMENT_CONFIRMED` (`status: COMPLETED`) | `GET /api/bookings/{bookingId}` |
+| Khách hoặc thợ hủy đơn | Khách & Thợ phụ trách | `/topic/bookings/{bookingId}` | `BOOKING_CANCELLED` (`status: CANCELLED`) | `GET /api/bookings/{bookingId}` |
 
 ### 11.2. Nhắn tin (Chat) hai bên `[ĐỀ XUẤT / CẦN BỔ SUNG]`
 - **Gửi tin:** `POST /api/bookings/{id}/messages` (hoặc gửi qua WebSocket STOMP)

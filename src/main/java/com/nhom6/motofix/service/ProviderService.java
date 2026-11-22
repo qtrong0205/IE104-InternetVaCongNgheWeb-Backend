@@ -65,6 +65,7 @@ public class ProviderService {
     private final RoleRepository roleRepository;
     private final UserRepository userRepository;
     private final BookingMapper bookingMapper;
+    private final WebSocketSyncService webSocketSyncService;
 
     private Clock clock = Clock.systemDefaultZone();
 
@@ -189,6 +190,11 @@ public class ProviderService {
         } else {
             // Tắt online: cho phép cả khi đang làm việc.
             // Hết hạn mọi offer chưa được khách chọn (PENDING / ACCEPTED trên booking SEARCHING)
+            List<BookingOffer> waitingOffers = bookingOfferRepository.findWaitingOffersForProvider(
+                    provider.getId(),
+                    List.of(OfferStatus.PENDING, OfferStatus.ACCEPTED),
+                    BookingStatus.SEARCHING
+            );
             provider.setActive(false);
             bookingOfferRepository.expireOffersForProvider(
                     provider.getId(),
@@ -196,6 +202,10 @@ public class ProviderService {
                     List.of(OfferStatus.PENDING, OfferStatus.ACCEPTED),
                     BookingStatus.SEARCHING
             );
+            for (BookingOffer o : waitingOffers) {
+                webSocketSyncService.notifyOfferExpired(provider.getId(), o.getId(), o.getBooking().getId());
+                webSocketSyncService.notifyOfferExpiredForBooking(o.getBooking().getId(), o.getId());
+            }
         }
 
         ProviderProfile saved = providerProfileRepository.save(provider);

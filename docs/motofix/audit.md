@@ -503,49 +503,58 @@ BE00 (Audit & Baseline) -> BE01 (Tài khoản & Phân quyền) -> BE02 (Hồ sơ
 
 ## 13. Biên bản bàn giao đợt BE07 · Đồng bộ WebSocket
 
-- **Thời điểm hoàn thành:** 22/11/2026.
-- **Trạng thái kiểm thử:** 15/15 ca kiểm thử WebSocket Sync PASS 100% trong `BE07WebSocketSyncWorkflowTests`. Toàn bộ test suite hồi quy (232+ tests) PASS 100%.
-- **Chi tiết 15 ca kiểm thử đợt BE07:**
-  1. `testConnect_ValidToken_Authenticated`: Kết nối STOMP CONNECT với JWT Bearer token hợp lệ trong header `Authorization` → Xác thực danh tính thành công.
-  2. `testConnect_InvalidToken_ThrowsException`: Kết nối STOMP CONNECT với token sai hoặc không hợp lệ → Ném ngoại lệ từ chối `BadCredentialsException`.
-  3. `testSubscribe_BookingTopic_AuthorizedCustomer_Success`: Khách hàng chủ đơn đăng ký nhận tin kênh `/topic/bookings/{bookingId}` → Được cấp quyền đăng ký thành công.
-  4. `testSubscribe_BookingTopic_AssignedProvider_Success`: Thợ được phân công phụ trách đơn đăng ký nhận tin kênh `/topic/bookings/{bookingId}` → Được cấp quyền đăng ký thành công.
-  5. `testSubscribe_BookingTopic_StrangerCustomer_Denied`: Khách hàng lạ không phải chủ đơn đăng ký nhận tin `/topic/bookings/{bookingId}` → Bị chặn quyền `403 AccessDeniedException`.
-  6. `testSubscribe_BookingTopic_OtherProvider_Denied`: Thợ khác không được phân công đăng ký nhận tin `/topic/bookings/{bookingId}` → Bị chặn quyền `403 AccessDeniedException`.
-  7. `testSubscribe_CustomerTopic_AuthorizedCustomer_Success`: Khách hàng đăng ký kênh cá nhân `/topic/customers/{userId}/bookings` với đúng `userId` → Được cấp quyền.
-  8. `testSubscribe_CustomerTopic_StrangerCustomer_Denied`: Khách hàng đăng ký kênh cá nhân của người khác → Bị từ chối `403 AccessDeniedException`.
-  9. `testSubscribe_ProviderOffersTopic_AuthorizedProvider_Success`: Thợ sửa xe đăng ký kênh nhận offer `/topic/providers/{providerId}/offers` đúng `providerId` của mình → Được cấp quyền.
-  10. `testSubscribe_ProviderOffersTopic_StrangerProvider_Denied`: Thợ khác đăng ký nghe lén kênh offer của đồng nghiệp → Bị từ chối `403 AccessDeniedException`.
-  11. `testEvents_PublishedAfterCommit_Success`: Thực hiện trọn vẹn vòng đời nghiệp vụ (Offer -> Chọn thợ -> Đến nơi -> Khám xe -> Báo giá -> Chấp nhận -> Hoàn tất -> Thanh toán); các sự kiện tương ứng (`OFFER_ACCEPTED`, `PROVIDER_SELECTED`, `BOOKING_STATUS_CHANGED`, `QUOTE_NEW`, `QUOTE_ACCEPTED`, `PAYMENT_CONFIRMED`) được bắn ra đúng kênh sau khi transaction commit thành công.
-  12. `testEvents_NotPublishedOnRollback`: Khi một service ném lỗi làm rollback transaction (ví dụ: cố tình chọn thợ cho đơn đã có thợ) → Không có bất kỳ sự kiện nào bị bắn ra ngoài WebSocket nhờ cơ chế `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)`.
-  13. `testClient_DetectsStaleEvent_ViaStatusOrder`: Khách hàng mô phỏng nhận sự kiện muộn/lặp (statusOrder cũ hơn hoặc bằng trạng thái hiện tại) → Dễ dàng phát hiện và loại bỏ sự kiện cũ nhờ thuộc tính `statusOrder` đơn điệu không đổi.
-  14. `testClient_Reconnect_RecoversStateViaHttpSnapshot`: Sau khi mất kết nối mạng và reconnect lại, client gọi HTTP `GET` theo URL gợi ý trong payload (`snapshotUrl` = `/api/bookings/{id}`) → Khôi phục lại trạng thái chính xác và đồng bộ hoàn toàn với backend.
-  15. `testPayment_ConfirmPaymentTwice_SecondCallFails_RevenueAccurate`: Thợ bấm xác nhận thanh toán 2 lần liên tiếp → Lần thứ hai nhận lỗi `409 Conflict`, doanh thu và trạng thái `COMPLETED` chỉ ghi nhận đúng 1 lần duy nhất, không phát sinh trùng lặp hay nhân đôi doanh thu.
+- **Thời điểm hoàn thành:** 23/11/2026.
+- **Trạng thái kiểm thử:** 21/21 ca kiểm thử chuyên sâu WebSocket Sync PASS 100% (gồm 16 ca workflow trong `BE07WebSocketSyncWorkflowTests` và 5 ca STOMP client kết nối thật trong `BE07RealStompIntegrationTests`).
+- **Chi tiết các ca kiểm thử đợt BE07:**
+  - *Bộ kiểm thử Workflow & Security (`BE07WebSocketSyncWorkflowTests` - 16 ca):*
+    1. `testConnect_ValidToken_Authenticated`: Frame STOMP `CONNECT` kèm Bearer JWT hợp lệ → Xác thực thành công.
+    2. `testConnect_InvalidToken_ThrowsException`: Token sai hoặc rỗng → Bị từ chối `BadCredentialsException`.
+    3. `testSubscribe_BookingTopic_AuthorizedCustomer_Success`: Khách chủ đơn subscribe `/topic/bookings/{id}` → Được cấp quyền.
+    4. `testSubscribe_BookingTopic_AssignedProvider_Success`: Thợ được gán subscribe `/topic/bookings/{id}` → Được cấp quyền.
+    5. `testSubscribe_BookingTopic_StrangerCustomer_Denied`: Khách lạ subscribe `/topic/bookings/{id}` → Bị chặn `403 AccessDeniedException`.
+    6. `testSubscribe_BookingTopic_OtherProvider_Denied`: Thợ khác subscribe `/topic/bookings/{id}` → Bị chặn `403 AccessDeniedException`.
+    7. `testSubscribe_CustomerTopic_AuthorizedCustomer_Success`: Khách subscribe kênh cá nhân `/topic/customers/{userId}/bookings` đúng ID → Cho phép.
+    8. `testSubscribe_CustomerTopic_StrangerCustomer_Denied`: Khách subscribe kênh người khác → Bị từ chối `403 AccessDeniedException`.
+    9. `testSubscribe_ProviderOffersTopic_AuthorizedProvider_Success`: Thợ subscribe kênh offer của mình `/topic/providers/{providerId}/offers` → Cho phép.
+    10. `testSubscribe_ProviderOffersTopic_StrangerProvider_Denied`: Thợ khác nghe lén kênh offer → Bị từ chối `403 AccessDeniedException`.
+    11. `testSubscribe_AdminRestrictedFromPersonalTopics_Denied`: Admin cố tình subscribe kênh cứu hộ cá nhân `/topic/bookings/{id}` hoặc kênh offer `/topic/providers/{id}/offers` → Bị từ chối `403 AccessDeniedException` (Giới hạn admin đúng phạm vi duyệt hồ sơ).
+    12. `testEvents_PublishedAfterCommit_Success`: Vòng đời nghiệp vụ phát sự kiện đầy đủ sau commit (`TransactionPhase.AFTER_COMMIT`).
+    13. `testEvents_NotPublishedOnRollback`: Giao dịch bị rollback → Tuyệt đối không phát sự kiện ra ngoài WebSocket.
+    14. `testSyncPayload_MonotonicStatusOrder`: Thứ tự trạng thái tăng đơn điệu: `SEARCHING (1) < SELECTED_PROVIDER (2) < PROVIDER_EN_ROUTE (3) < INSPECTING (4) < IN_PROGRESS (5) < WAITING_PAYMENT (6) < COMPLETED (7) < CANCELLED (8)`.
+    15. `testStaleOrDuplicateEvent_DoesNotRegressStatus`: Quy tắc chống lùi bước trạng thái khi nhận sự kiện muộn/lặp; đồng thời xử lý đúng nhiều offer thay đổi (T1 accept, T2 accept, T1 expire) trong cùng trạng thái `SEARCHING`.
+    16. `testPayment_ConfirmPaymentTwice_SecondCallFails_RevenueAccurate`: Chặn bấm thanh toán lặp (`409 Conflict`), doanh thu chỉ ghi nhận 1 lần, không nhân đôi.
+  - *Bộ kiểm thử STOMP Client kết nối thật (`BE07RealStompIntegrationTests` - 5 ca):*
+    1. `testWorkflow_OneCustomer_TwoProviders_SelectT1_RealStomp`: Một khách và hai thợ: Cả hai thợ đồng ý (`OFFER_ACCEPTED`), khách thấy đủ hai offer trên `/topic/bookings/{bookingId}`; khách chọn T1 → T1 nhận thông báo `PROVIDER_SELECTED` qua kênh `/topic/providers/{t1Id}/offers` đã nghe từ trước khi được chọn, T2 nhận thông báo `OFFER_EXPIRED` qua kênh `/topic/providers/{t2Id}/offers`.
+    2. `testProviderOfflineOrLogout_MakesOfferDisappearOnCustomerTopic_RealStomp`: Thợ tắt online (`PUT /api/providers/me`) hoặc logout (`POST /api/auth/logout`) → Khách nhận được sự kiện `OFFER_EXPIRED` trên `/topic/bookings/{bookingId}` kèm `offerId` để gỡ bỏ offer khỏi màn hình chờ chọn.
+    3. `testClientDisconnect_OfflineStateChange_Reconnect_HttpSnapshotWithAuth`: Khách ngắt kết nối session; thợ cập nhật trạng thái (`PROVIDER_EN_ROUTE`) lúc khách offline; khách kết nối lại STOMP và gọi HTTP `GET /api/bookings/{id}` thật có Bearer token xác thực → Nhận snapshot trạng thái mới nhất chính xác.
+    4. `testOldSession_AfterLogout_Rejected`: Khách hoặc thợ sau khi logout (tăng `tokenVersion`), cố kết nối lại STOMP bằng JWT token cũ → Bị từ chối xác thực.
+    5. `testAdminRestrictedFromPersonalBookingTopics_RealStomp`: Admin kết nối STOMP thật và cố subscribe topic cá nhân `/topic/bookings/{id}` → Bị server từ chối và ngắt kết nối do không có quyền.
 - **Tập tin đã thay đổi & tạo mới:**
-  - `pom.xml`: Bổ sung dependency `spring-boot-starter-websocket`.
-  - `src/main/java/com/nhom6/motofix/enums/SyncEventType.java` *(Mới)*: Khai báo 13 sự kiện đồng bộ chuẩn hóa (`OFFER_NEW`, `OFFER_ACCEPTED`, `OFFER_DECLINED`, `OFFER_EXPIRED`, `PROVIDER_SELECTED`, `BOOKING_STATUS_CHANGED`, `BOOKING_CANCELLED`, `QUOTE_NEW`, `QUOTE_REVISED`, `QUOTE_ACCEPTED`, `QUOTE_ROLLBACK`, `BOOKING_COMPLETED_REPAIR`, `PAYMENT_CONFIRMED`).
-  - `src/main/java/com/nhom6/motofix/dto/respond/SyncEventPayload.java` *(Mới)*: Record chuẩn hóa payload chứa `eventId`, `eventType`, `bookingId`, `status`, `statusOrder`, `quoteVersion`, `timestamp`, `actorId`, `message`, `data`, `snapshotUrl`.
-  - `src/main/java/com/nhom6/motofix/websocket/BookingSyncApplicationEvent.java` *(Mới)*: Internal Spring Application Event mang theo destination và payload.
-  - `src/main/java/com/nhom6/motofix/websocket/WebSocketEventBridge.java` *(Mới)*: Lắng nghe sự kiện sau commit (`TransactionPhase.AFTER_COMMIT`), chuyển tiếp qua `SimpMessagingTemplate` và hỗ trợ capture sự kiện phục vụ test.
-  - `src/main/java/com/nhom6/motofix/websocket/StompAuthChannelInterceptor.java` *(Mới)*: `ChannelInterceptor` xác thực JWT tại frame STOMP `CONNECT`, phân quyền kênh đăng ký tại frame `SUBSCRIBE`, có `@Transactional(readOnly = true)`.
-  - `src/main/java/com/nhom6/motofix/config/WebSocketConfig.java` *(Mới)*: Cấu hình endpoint STOMP `/ws` (hỗ trợ cả Native WebSocket và SockJS fallback), broker `/topic` và `/queue`, đăng ký interceptor bảo mật.
-  - `src/main/java/com/nhom6/motofix/config/SecurityConfig.java`: Cho phép permitAll cho `/ws/**` ở tầng HTTP handshake.
-  - `src/main/java/com/nhom6/motofix/service/WebSocketSyncService.java` *(Mới)*: Tầng phát thông báo nghiệp vụ tích hợp logic tính toán `statusOrder` và `snapshotUrl`.
-  - `src/main/java/com/nhom6/motofix/dto/respond/IncomingOfferResponse.java`: Bổ sung static factory method `from(BookingOffer o)`.
-  - `src/main/java/com/nhom6/motofix/repository/BookingRepository.java`: Bổ sung truy vấn `findByIdWithCustomerAndProvider(UUID id)` với JOIN FETCH để tránh LazyInitializationException.
-  - `src/main/java/com/nhom6/motofix/repository/ProviderProfileRepository.java`: Bổ sung truy vấn `findByIdWithUser(UUID id)` với JOIN FETCH.
-  - `src/main/java/com/nhom6/motofix/service/BookingService.java`: Tích hợp phát sự kiện đồng bộ khi tạo đơn, chọn thợ, tìm lại, xác nhận đến nơi, xác nhận khám xe, hoàn thành sửa chữa, xác nhận thanh toán, và hủy đơn.
-  - `src/main/java/com/nhom6/motofix/service/OfferService.java`: Tích hợp phát sự kiện đồng bộ khi thợ chấp nhận offer (`OFFER_ACCEPTED`) hoặc từ chối offer (`OFFER_DECLINED`).
-  - `src/main/java/com/nhom6/motofix/service/QuoteService.java`: Tích hợp phát sự kiện đồng bộ khi tạo quote v1 (`QUOTE_NEW`), sửa quote (`QUOTE_REVISED`), chấp nhận quote (`QUOTE_ACCEPTED`), và rollback quote (`QUOTE_ROLLBACK`).
-  - `src/test/java/com/nhom6/motofix/BE07WebSocketSyncWorkflowTests.java` *(Mới)*: Bộ test 15 ca kiểm thử WebSocket toàn diện.
-  - `docs/motofix/api-contract.md`: Nâng phiên bản lên 1.7.0, chuyển Mục 11.1 sang `[ĐÃ KIỂM THỬ]`.
-  - `docs/motofix/audit.md`: Cập nhật bảng đối chiếu và biên bản bàn giao BE07.
+  - `pom.xml`: Bổ sung `spring-boot-starter-websocket` và `jackson-datatype-jsr310`.
+  - `src/main/java/com/nhom6/motofix/enums/SyncEventType.java`: Khai báo 13 sự kiện đồng bộ chuẩn hóa.
+  - `src/main/java/com/nhom6/motofix/dto/respond/SyncEventPayload.java`: Thêm trường `UUID offerId` và các helper constructor.
+  - `src/main/java/com/nhom6/motofix/websocket/BookingSyncApplicationEvent.java`: Internal Spring Application Event mang destination và payload.
+  - `src/main/java/com/nhom6/motofix/websocket/WebSocketEventBridge.java`: Xử lý sau commit (`AFTER_COMMIT`), capture sự kiện phục vụ test.
+  - `src/main/java/com/nhom6/motofix/websocket/StompAuthChannelInterceptor.java`: Xác thực frame `CONNECT`, phân quyền frame `SUBSCRIBE`, giới hạn admin đúng phạm vi duyệt hồ sơ.
+  - `src/main/java/com/nhom6/motofix/config/WebSocketConfig.java`: Cấu hình endpoint `/ws` (native + SockJS), simple broker `/topic`, `/queue`.
+  - `src/main/java/com/nhom6/motofix/config/SecurityConfig.java`: Mở `permitAll` cho `/ws/**` ở tầng HTTP handshake.
+  - `src/main/java/com/nhom6/motofix/service/WebSocketSyncService.java`: Bổ sung `notifyOfferExpiredForBooking` và hỗ trợ `offerId` trong payload.
+  - `src/main/java/com/nhom6/motofix/repository/BookingOfferRepository.java`: Thêm query `findWaitingOffersForProvider` và `findByBookingId`.
+  - `src/main/java/com/nhom6/motofix/repository/BookingRepository.java`: Thêm query `findByIdWithDetails` nạp sẵn `media` chống lazy detached entity.
+  - `src/main/java/com/nhom6/motofix/service/ProviderService.java`: Phát thông báo `OFFER_EXPIRED` cho cả thợ và khách khi thợ tắt online.
+  - `src/main/java/com/nhom6/motofix/service/AuthService.java`: Phát thông báo `OFFER_EXPIRED` khi thợ đăng xuất.
+  - `src/main/java/com/nhom6/motofix/service/UserService.java`: Phát thông báo `OFFER_EXPIRED` khi thợ chuyển sang vai `CUSTOMER`.
+  - `src/main/java/com/nhom6/motofix/service/BookingService.java`: Cập nhật `selectOffer` phát thông báo `OFFER_EXPIRED` tới các thợ khác và khách hàng, nạp lại booking với `findByIdWithDetails`.
+  - `src/test/java/com/nhom6/motofix/BE07WebSocketSyncWorkflowTests.java`: 16/16 ca kiểm thử workflow PASS.
+  - `src/test/java/com/nhom6/motofix/BE07RealStompIntegrationTests.java` *(Mới)*: 5/5 ca kiểm thử STOMP client kết nối thật PASS.
+  - `docs/motofix/api-contract.md`: Cập nhật bảng ma trận Thao tác → Ai nhận → Topic → Event → API snapshot, quy tắc nhiều offer trong `SEARCHING`, giới hạn admin.
+  - `docs/motofix/audit.md`: Cập nhật Bảng 3 và biên bản bàn giao Section 13.
 - **Trở ngại & Giải pháp:**
-  - *Trở ngại 1:* Đối với STOMP Message trong quá trình xử lý interceptor, nếu header accessor bị khóa read-only (`!accessor.isMutable()`), thao tác `accessor.setUser(auth)` sẽ ném lỗi `IllegalStateException: Already immutable`.
-    *Giải pháp:* Kiểm tra tính khả biến trong `preSend`; nếu header bị immutable, wrap lại bằng `StompHeaderAccessor.wrap(message)` rồi rebuild `MessageHeaderAccessor` mới gán vào message trước khi chuyển tiếp.
-  - *Trở ngại 2:* Phương thức `preSend` của `ChannelInterceptor` không nằm trong một transaction mở mặc định của Spring MVC request thread. Khi truy xuất các quan hệ lazy như `booking.getProvider().getUser()`, Hibernate ném `LazyInitializationException`.
-    *Giải pháp:* Đánh dấu `@Transactional(readOnly = true)` trên interceptor và viết riêng các phương thức query JOIN FETCH `findByIdWithCustomerAndProvider` và `findByIdWithUser` trong repository.
-  - *Trở ngại 3:* Khi nghiệp vụ gặp lỗi và rollback transaction, các thông báo đồng bộ nếu gửi ngay trong service method sẽ bị phát nhầm ra ngoài WebSocket gây sai lệch dữ liệu phía client.
-    *Giải pháp:* Thay vì gọi trực tiếp `messagingTemplate.convertAndSend` trong service, service phát `ApplicationEventPublisher.publishEvent`. Sau đó `WebSocketEventBridge` lắng nghe với `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)`, cam kết chỉ phát ra WebSocket khi transaction cơ sở dữ liệu đã commit thành công 100%.
+  - *Trở ngại 1:* Khi thợ tắt online / logout / chuyển vai, offer chuyển sang `EXPIRED` qua `@Modifying UPDATE` nhưng khách hàng không nhận được thông báo để cập nhật giao diện.
+    *Giải pháp:* Thêm truy vấn `findWaitingOffersForProvider` trước khi update; với mỗi offer bị ảnh hưởng, phát sự kiện `OFFER_EXPIRED` đồng thời tới kênh thợ `/topic/providers/{id}/offers` và kênh khách `/topic/bookings/{id}` kèm `offerId`.
+  - *Trở ngại 2:* Sau khi thực thi `@Modifying(clearAutomatically = true)` trong repository, PersistenceContext bị xóa dẫn đến `Booking.media` bị detached và ném `LazyInitializationException` khi mapper chuyển đổi response.
+    *Giải pháp:* Bổ sung truy vấn `findByIdWithDetails` với JOIN FETCH nạp đầy đủ quan hệ trước khi map `toBookingResponse`.
+  - *Trở ngại 3:* STOMP Client khi nhận frame deserialize JSON bị lỗi do thiếu module hỗ trợ Java 8 Date/Time (`LocalDateTime`).
+    *Giải pháp:* Bổ sung dependency `jackson-datatype-jsr310` vào `pom.xml` và đăng ký `JavaTimeModule` cho `ObjectMapper` của STOMP Client.
 
 

@@ -17,6 +17,7 @@ import com.nhom6.motofix.repository.UserRepository;
 import com.nhom6.motofix.service.BookingService;
 import com.nhom6.motofix.service.ProviderService;
 import com.nhom6.motofix.service.ReviewService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -132,6 +133,14 @@ public class BE06PaymentRevenueAndReviewWorkflowTests {
         booking = bookingRepository.save(booking);
 
         // Reset clock về giờ thực tế trước mỗi test
+        bookingService.setClock(Clock.systemDefaultZone());
+        reviewService.setClock(Clock.systemDefaultZone());
+        providerService.setClock(Clock.systemDefaultZone());
+    }
+
+    @AfterEach
+    void tearDown() {
+        // Đảm bảo không làm ô nhiễm Clock singleton sang các test suite khác
         bookingService.setClock(Clock.systemDefaultZone());
         reviewService.setClock(Clock.systemDefaultZone());
         providerService.setClock(Clock.systemDefaultZone());

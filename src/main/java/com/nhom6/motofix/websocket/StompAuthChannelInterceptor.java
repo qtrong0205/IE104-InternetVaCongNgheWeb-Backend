@@ -150,9 +150,6 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             return;
         }
 
-        boolean isAdmin = user.getRoles() != null && user.getRoles().stream()
-                .anyMatch(r -> "ADMIN".equalsIgnoreCase(r.getName()));
-
         // 1. Kiểm tra quyền truy cập /topic/bookings/{bookingId}
         Matcher bookingMatcher = BOOKING_TOPIC_PATTERN.matcher(destination);
         if (bookingMatcher.matches()) {
@@ -165,11 +162,11 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
                         && booking.getProvider().getUser() != null
                         && booking.getProvider().getUser().getId().equals(user.getId());
 
-                if (!isCustomer && !isAssignedProvider && !isAdmin) {
-                    log.warn("Access denied for user {} subscribing to booking topic {}", user.getId(), destination);
+                if (!isCustomer && !isAssignedProvider) {
+                    log.warn("Access denied for user {} subscribing to booking topic {} (admin is restricted from personal booking topics)", user.getId(), destination);
                     throw new AccessDeniedException("You are not authorized to subscribe to booking " + bookingId);
                 }
-            } else if (!isAdmin) {
+            } else {
                 log.warn("Booking not found for user {} subscribing to topic {}", user.getId(), destination);
                 throw new AccessDeniedException("Booking not found for topic " + destination);
             }
@@ -180,7 +177,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         Matcher customerMatcher = CUSTOMER_TOPIC_PATTERN.matcher(destination);
         if (customerMatcher.matches()) {
             UUID targetUserId = UUID.fromString(customerMatcher.group(1));
-            if (!user.getId().equals(targetUserId) && !isAdmin) {
+            if (!user.getId().equals(targetUserId)) {
                 log.warn("Access denied for user {} subscribing to customer topic {}", user.getId(), destination);
                 throw new AccessDeniedException("You are not authorized to subscribe to customer topic " + destination);
             }
@@ -195,14 +192,14 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
 
             if (profile != null) {
                 boolean isOwner = profile.getUser() != null && profile.getUser().getId().equals(user.getId());
-                if (!isOwner && !isAdmin) {
+                if (!isOwner) {
                     log.warn("Access denied for user {} subscribing to provider topic {}", user.getId(), destination);
                     throw new AccessDeniedException("You are not authorized to subscribe to provider topic " + destination);
                 }
-            } else if (!isAdmin) {
-                // Nếu profile không tồn tại và không phải admin -> từ chối
+            } else {
                 throw new AccessDeniedException("Provider profile not found for topic " + destination);
             }
+            return;
         }
     }
 }

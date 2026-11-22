@@ -51,6 +51,7 @@ public class WebSocketSyncService {
         SyncEventPayload payload = SyncEventPayload.of(
                 SyncEventType.OFFER_ACCEPTED,
                 booking.getId(),
+                offer.getId(),
                 booking.getStatus(),
                 null,
                 providerUser != null ? providerUser.getId() : null,
@@ -62,7 +63,7 @@ public class WebSocketSyncService {
     }
 
     /**
-     * Thông báo cho thợ khi offer của mình hết hạn (hoặc thợ khác đã được chọn).
+     * Thông báo cho thợ khi offer của mình hết hạn (hoặc thợ khác đã được chọn / thợ tắt online / logout).
      * Destination: /topic/providers/{providerId}/offers
      */
     public void notifyOfferExpired(UUID providerId, UUID offerId, UUID bookingId) {
@@ -71,10 +72,11 @@ public class WebSocketSyncService {
         SyncEventPayload payload = SyncEventPayload.of(
                 SyncEventType.OFFER_EXPIRED,
                 bookingId,
+                offerId,
                 null,
                 null,
                 null,
-                "Offer đã hết hiệu lực do khách đã chọn thợ khác hoặc quá hạn",
+                "Offer đã hết hiệu lực do khách đã chọn thợ khác, quá hạn hoặc thợ không còn online",
                 offerId,
                 "/api/providers/incoming-offers"
         );
@@ -82,16 +84,38 @@ public class WebSocketSyncService {
     }
 
     /**
+     * Thông báo cho khách hàng khi một offer hết hiệu lực hoặc thợ không còn online / logout.
+     * Destination: /topic/bookings/{bookingId}
+     */
+    public void notifyOfferExpiredForBooking(UUID bookingId, UUID offerId) {
+        if (bookingId == null || offerId == null) return;
+        String dest = "/topic/bookings/" + bookingId;
+        SyncEventPayload payload = SyncEventPayload.of(
+                SyncEventType.OFFER_EXPIRED,
+                bookingId,
+                offerId,
+                com.nhom6.motofix.enums.BookingStatus.SEARCHING,
+                null,
+                null,
+                "Một thợ không còn online hoặc offer đã hết hiệu lực",
+                offerId,
+                "/api/bookings/" + bookingId + "/offers"
+        );
+        eventPublisher.publishEvent(new BookingSyncApplicationEvent(dest, payload));
+    }
+
+    /**
      * Thông báo khi khách hàng chọn thợ:
      * - Gửi tới /topic/bookings/{bookingId} (cho khách và thợ chính theo dõi)
-     * - Gửi tới /topic/providers/{selectedProviderId}/offers (cho thợ được chọn biết kết quả)
+     * - Gửi tới /topic/providers/{selectedProviderId}/offers (cho thợ được chọn biết kết quả qua kênh đã nghe trước khi được chọn)
      */
-    public void notifyProviderSelected(Booking booking, UUID selectedProviderId, User customer) {
+    public void notifyProviderSelected(Booking booking, UUID selectedProviderId, UUID selectedOfferId, User customer) {
         if (booking == null) return;
         String bookingDest = "/topic/bookings/" + booking.getId();
         SyncEventPayload payload = SyncEventPayload.of(
                 SyncEventType.PROVIDER_SELECTED,
                 booking.getId(),
+                selectedOfferId,
                 booking.getStatus(),
                 null,
                 customer != null ? customer.getId() : null,
@@ -105,6 +129,10 @@ public class WebSocketSyncService {
             String provDest = "/topic/providers/" + selectedProviderId + "/offers";
             eventPublisher.publishEvent(new BookingSyncApplicationEvent(provDest, payload));
         }
+    }
+
+    public void notifyProviderSelected(Booking booking, UUID selectedProviderId, User customer) {
+        notifyProviderSelected(booking, selectedProviderId, null, customer);
     }
 
     /**

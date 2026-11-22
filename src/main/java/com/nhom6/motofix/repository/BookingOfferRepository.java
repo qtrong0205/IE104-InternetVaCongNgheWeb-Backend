@@ -19,6 +19,8 @@ public interface BookingOfferRepository extends JpaRepository<BookingOffer, UUID
 
     Optional<BookingOffer> findByIdAndProvider_Id(UUID id, UUID providerId);
 
+    List<BookingOffer> findByBookingId(UUID bookingId);
+
     @Query("""
         SELECT o FROM BookingOffer o
         JOIN FETCH o.provider p
@@ -74,6 +76,19 @@ public interface BookingOfferRepository extends JpaRepository<BookingOffer, UUID
     int expireOffersForProvider(
             @Param("providerId") UUID providerId,
             @Param("expiredStatus") OfferStatus expiredStatus,
+            @Param("activeOfferStatuses") Collection<OfferStatus> activeOfferStatuses,
+            @Param("searchingStatus") BookingStatus searchingStatus);
+
+    @Query("""
+        SELECT o FROM BookingOffer o
+        JOIN FETCH o.booking b
+        JOIN FETCH o.provider p
+        WHERE o.provider.id = :providerId
+          AND o.status IN (:activeOfferStatuses)
+          AND b.status = :searchingStatus
+        """)
+    List<BookingOffer> findWaitingOffersForProvider(
+            @Param("providerId") UUID providerId,
             @Param("activeOfferStatuses") Collection<OfferStatus> activeOfferStatuses,
             @Param("searchingStatus") BookingStatus searchingStatus);
 

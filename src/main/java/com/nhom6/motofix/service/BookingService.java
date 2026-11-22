@@ -167,7 +167,8 @@ public class BookingService {
         }
         webSocketSyncService.notifyBookingStatusChanged(saved, SyncEventType.BOOKING_STATUS_CHANGED, user, "Đang tìm kiếm thợ cứu hộ gần bạn", null);
 
-        return bookingMapper.toBookingResponse(saved);
+        Booking responseBooking = bookingRepository.findByIdWithDetails(saved.getId()).orElse(saved);
+        return bookingMapper.toBookingResponse(responseBooking);
     }
 
     /**
@@ -332,16 +333,17 @@ public class BookingService {
 
         log.info("Customer {} selected offer {} (provider {}) for booking {}", customerId, offerId, providerId, bookingId);
 
-        webSocketSyncService.notifyProviderSelected(saved, providerId, booking.getCustomer());
-        if (booking.getOffers() != null) {
-            for (BookingOffer o : booking.getOffers()) {
-                if (o.getProvider() != null && !o.getProvider().getId().equals(providerId)) {
-                    webSocketSyncService.notifyOfferExpired(o.getProvider().getId(), o.getId(), bookingId);
-                }
+        webSocketSyncService.notifyProviderSelected(saved, providerId, offerId, booking.getCustomer());
+        List<BookingOffer> remainingOffers = bookingOfferRepository.findByBookingId(bookingId);
+        for (BookingOffer o : remainingOffers) {
+            if (o.getProvider() != null && !o.getProvider().getId().equals(providerId)) {
+                webSocketSyncService.notifyOfferExpired(o.getProvider().getId(), o.getId(), bookingId);
+                webSocketSyncService.notifyOfferExpiredForBooking(bookingId, o.getId());
             }
         }
 
-        return bookingMapper.toBookingResponse(saved);
+        Booking responseBooking = bookingRepository.findByIdWithDetails(saved.getId()).orElse(saved);
+        return bookingMapper.toBookingResponse(responseBooking);
     }
 
     /**
@@ -466,7 +468,8 @@ public class BookingService {
                 null
         );
 
-        return bookingMapper.toBookingResponse(saved);
+        Booking responseBooking = bookingRepository.findByIdWithDetails(saved.getId()).orElse(saved);
+        return bookingMapper.toBookingResponse(responseBooking);
     }
 
     @Transactional
@@ -496,7 +499,8 @@ public class BookingService {
                 null
         );
 
-        return bookingMapper.toBookingResponse(saved);
+        Booking responseBooking = bookingRepository.findByIdWithDetails(saved.getId()).orElse(saved);
+        return bookingMapper.toBookingResponse(responseBooking);
     }
 
     /**
@@ -552,7 +556,8 @@ public class BookingService {
                 null
         );
 
-        return bookingMapper.toBookingResponse(saved);
+        Booking responseBooking = bookingRepository.findByIdWithDetails(saved.getId()).orElse(saved);
+        return bookingMapper.toBookingResponse(responseBooking);
     }
 
     /**
@@ -603,7 +608,8 @@ public class BookingService {
                 saved.getPaymentMethod()
         );
 
-        return bookingMapper.toBookingResponse(saved);
+        Booking responseBooking = bookingRepository.findByIdWithDetails(saved.getId()).orElse(saved);
+        return bookingMapper.toBookingResponse(responseBooking);
     }
 
     /**
@@ -680,7 +686,8 @@ public class BookingService {
                 null
         );
 
-        return bookingMapper.toBookingResponse(saved);
+        Booking responseBooking = bookingRepository.findByIdWithDetails(saved.getId()).orElse(saved);
+        return bookingMapper.toBookingResponse(responseBooking);
     }
 
     /**
