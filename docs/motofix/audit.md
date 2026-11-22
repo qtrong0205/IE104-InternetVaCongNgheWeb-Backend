@@ -98,14 +98,14 @@ Kết quả:
 | **Khách: Yêu cầu quét tìm lại** | Nhóm 05 (`04-tim-lai.md`), Nhóm 11 Quyết định 03; `OfferAndSearchWorkflowTests` | `POST /api/bookings/{id}/search-rounds` | `BookingController:triggerSearchRound` | [ĐẠT / TESTED] | Quét tìm lại theo 3 mốc (5 → 10 → 15 km). Chỉ mở khi hết hạn PENDING và không còn ACCEPTED có thợ rảnh. Loại trừ thợ DECLINED, mời lại thợ EXPIRED bằng ID mới. Chống gửi lặp cùng lượt. Tới 15 km giữ SEARCHING cho khách hủy. | **BE04 (Xong)** |
 | **Thợ: Bắt đầu di chuyển** | Nhóm 06, TC-06-06..09; `BookingWorkflowTests:testEnRoute_*` | `PATCH /api/bookings/{id}/en-route` | `BookingController:confirmEnRoute` | Đã test 3 ca (thành công, sai thợ, sai status) | Chuyển booking sang `PROVIDER_EN_ROUTE`. Hoạt động chuẩn. | — |
 | **Thợ: Đã đến nơi khám xe** | Nhóm 06, TC-06-10..13; `BookingWorkflowTests:testArrived_*` | `PATCH /api/bookings/{id}/arrived` | `BookingController:confirmArrived` | Đã test 3 ca | Chuyển booking sang `INSPECTING`. Hoạt động chuẩn. | — |
-| **Khách/Thợ: Hủy đơn** | Nhóm 06, TC-06-14..22; `QuoteNegotiationWorkflowTests:testCancelBooking_*` | `POST /api/bookings/{id}/cancel` | `BookingController:cancelBooking` | Đã test 7 ca toàn diện ma trận quyền | Kiểm tra chuẩn: khách chỉ được hủy khi `IN_PROGRESS` có quote `PENDING`; thợ được hủy; không được hủy khi `WAITING_PAYMENT`.. | — |
-| **Thợ: Gửi chẩn đoán ban đầu (v1)** | Nhóm 07, TC-07-01..06; `BookingWorkflowTests:testCreateInitialQuote_*` | `POST /api/bookings/{id}/quotes` | `BookingController:createInitialQuote` | Đã test 4 ca | Tạo version 1 `PENDING`, tự tính `amount` và `total_amount`. Hoạt động chuẩn. | — |
-| **Khách: Chấp nhận báo giá** | Nhóm 07, TC-07-07..12; `QuoteNegotiationWorkflowTests:testAcceptQuote_*` | `POST /api/bookings/{id}/quotes/{quoteId}/accept` | `BookingController:acceptQuote` | Đã test 6 ca | Đổi quote sang `ACCEPTED`, bản cũ sang `SUPERSEDED`, booking sang `IN_PROGRESS`. Khóa `PESSIMISTIC_WRITE` chuẩn. | — |
-| **Thợ: Sửa báo giá (revise)** | Nhóm 07, TC-07-13..23; `QuoteNegotiationWorkflowTests:testReviseQuote_*` | `POST /api/bookings/{id}/quotes/revise` | `BookingController:reviseQuote` | Đã test 10 ca đủ 3 trường hợp | Hoạt động chuẩn 3 case nghiệp vụ: v1 PENDING → v2 PENDING; v1 ACCEPTED → v2 PENDING; v1 ACCEPTED + v2 PENDING → v1 ACCEPTED + v3 PENDING. | — |
-| **Thợ: Hủy bản phát sinh (rollback)** | Nhóm 07, TC-07-24..31; `QuoteNegotiationWorkflowTests:testRollbackQuote_*` | `POST /api/bookings/{id}/quotes/rollback` | `BookingController:rollbackQuote` | Đã test 8 ca | Hủy bản PENDING phát sinh (`CANCELLED`), giữ bản ACCEPTED gần nhất. Hoạt động chuẩn. | — |
-| **Khách/Thợ: Xem các bản quote** | Nhóm 07, TC-07-32..35; `QuoteNegotiationWorkflowTests:testGetQuotes_Success` | `GET /api/bookings/{id}/quotes` | `BookingController:getQuotes` | Đã test lấy danh sách phiên bản | Hoạt động chuẩn. | — |
-| **Khách/Thợ: Chi tiết 1 bản quote** | Nhóm 07, TC-07-36..38 | `GET /api/bookings/{id}/quotes/{quoteId}` | `BookingController:getQuoteDetails` | Có mã trong controller | Có mapping và service nhưng chưa có test kiểm thử riêng cho endpoint chi tiết. | **BE05** |
-| **Thợ: Xác nhận hoàn thành sửa** | Nhóm 08, TC-08-01..08; `BookingCompletionAndReviewWorkflowTests:testComplete_*` | `PATCH /api/bookings/{id}/complete` | `BookingController:completeBooking` | Đã test 8 ca chặt chẽ | Kiểm tra đủ 3 điều kiện: `IN_PROGRESS`, có đúng 1 quote `ACCEPTED`, không có quote `PENDING`. Chuyển sang `WAITING_PAYMENT`. | — |
+| **Khách/Thợ: Hủy đơn** | Nhóm 06, TC-06-14..22; `QuoteNegotiationWorkflowTests`, `BE05StateMachineAndQuoteVersionTests` | `POST /api/bookings/{id}/cancel` | `BookingController:cancelBooking` | [ĐẠT / TESTED] | Kiểm tra chuẩn ma trận: khách chỉ được hủy khi `IN_PROGRESS` có quote `PENDING`; thợ được hủy; không được hủy khi `WAITING_PAYMENT` trở đi; atomic cleanup offer -> EXPIRED, quote PENDING -> CANCELLED, giữ quote ACCEPTED. | **BE05 (Xong)** |
+| **Thợ: Gửi chẩn đoán ban đầu (v1)** | Nhóm 07, TC-07-01..06; `BE05StateMachineAndQuoteVersionTests` | `POST /api/bookings/{id}/quotes` | `BookingController:createInitialQuote` | [ĐẠT / TESTED] | Tạo version 1 `PENDING`, `based_on_quote_id = null`. Backend tự tính `amount = quantity * unitPrice` và `total_amount = sum(amount)`. | **BE05 (Xong)** |
+| **Khách: Chấp nhận báo giá** | Nhóm 07, TC-07-07..12; `BE05StateMachineAndQuoteVersionTests` | `POST /api/bookings/{id}/quotes/{quoteId}/accept` | `BookingController:acceptQuote` | [ĐẠT / TESTED] | Đổi quote sang `ACCEPTED`, bản cũ sang `SUPERSEDED`, booking sang `IN_PROGRESS`. Stale accept sau revise/rollback ném `409 Conflict`. Khóa `PESSIMISTIC_WRITE` chuẩn. | **BE05 (Xong)** |
+| **Thợ: Sửa báo giá (revise)** | Nhóm 07, TC-07-13..23; `BE05StateMachineAndQuoteVersionTests` | `POST /api/bookings/{id}/quotes/revise` | `BookingController:reviseQuote` | [ĐẠT / TESTED] | Hoạt động chuẩn 3 case nghiệp vụ: v1 PENDING → v2 PENDING (`based_on = null`); v1 ACCEPTED → v2 PENDING (`based_on = v1`); v1 ACCEPTED + v2 PENDING → v1 ACCEPTED + v3 PENDING (`based_on = v1`). Khóa bi quan chống xung đột. | **BE05 (Xong)** |
+| **Thợ: Hủy bản phát sinh (rollback)** | Nhóm 07, TC-07-24..31; `BE05StateMachineAndQuoteVersionTests` | `POST /api/bookings/{id}/quotes/rollback` | `BookingController:rollbackQuote` | [ĐẠT / TESTED] | Hủy bản PENDING phát sinh (`CANCELLED`), giữ bản ACCEPTED gần nhất. Hoạt động chuẩn. | **BE05 (Xong)** |
+| **Khách/Thợ: Xem các bản quote** | Nhóm 07, TC-07-32..35; `BE05StateMachineAndQuoteVersionTests` | `GET /api/bookings/{id}/quotes` | `BookingController:getQuotes` | [ĐẠT / TESTED] | Lấy danh sách phiên bản tăng dần; item lấy trạng thái hiệu lực tự động từ quote chứa nó. | **BE05 (Xong)** |
+| **Khách/Thợ: Chi tiết 1 bản quote** | Nhóm 07, TC-07-36..38; `QuoteNegotiationWorkflowTests` | `GET /api/bookings/{id}/quotes/{quoteId}` | `BookingController:getQuoteDetails` | [ĐẠT / TESTED] | Xem chi tiết phiên bản quote cụ thể, phân quyền khách chủ đơn và thợ được gán. | **BE05 (Xong)** |
+| **Thợ: Xác nhận hoàn thành sửa** | Nhóm 08, TC-08-01..08; `BE05StateMachineAndQuoteVersionTests` | `PATCH /api/bookings/{id}/complete` | `BookingController:completeBooking` | [ĐẠT / TESTED] | Kiểm tra đủ 3 điều kiện: thợ được gán, `IN_PROGRESS`, đúng 1 quote `ACCEPTED`, không có quote `PENDING`. Không yêu cầu payload checklist (checklist ở UI). Chuyển `WAITING_PAYMENT`. | **BE05 (Xong)** |
 | **Thợ: Xác nhận đã nhận tiền** | Nhóm 08, TC-08-09..16; `BookingCompletionAndReviewWorkflowTests:testConfirmPayment_*` | `PATCH /api/bookings/{id}/payment/confirm` | `BookingController:confirmPayment` | Đã test 7 ca nhận tiền mặt/CK | Đổi sang `COMPLETED`, lưu `paymentMethod`. **Cần bổ sung:** lưu mốc thời gian nhận tiền thực tế để tính doanh thu và hạn đánh giá 7 ngày. | **BE05** |
 | **Khách: Đánh giá thợ** | Nhóm 09, TC-09-01..09; `BookingCompletionAndReviewWorkflowTests:testCreateReview_*` | `POST /api/bookings/{id}/review` | `BookingController:createReview` | Đã test 8 ca | **Thiếu:** kiểm tra hạn đánh giá trong vòng 168 giờ (7 ngày) kể từ thời điểm hoàn tất nhận tiền. | **BE05** |
 | **Thợ/Khách: Xem đánh giá thợ** | Nhóm 09, TC-09-10..13 | `GET /api/providers/{providerId}/reviews` | *Chưa có mapping* | Không tìm thấy trong controller | **Thiếu hoàn toàn**. Màn hình thợ xem danh sách đánh giá của mình và khách xem đánh giá thợ khi chọn. | **BE05** |
@@ -398,4 +398,47 @@ BE00 (Audit & Baseline) -> BE01 (Tài khoản & Phân quyền) -> BE02 (Hồ sơ
     *Giải pháp:* Trong `selectOffer`, khi `offer.getStatus() != ACCEPTED`, kiểm tra nếu thợ đã nhận đơn cứu hộ khác (`bookingRepository.hasActiveBookings(...)`), ném ngay `ConflictException` (409 Conflict) với thông điệp rõ ràng cho khách hàng.
   - *Trở ngại 2:* Khi kích hoạt vòng 2 tìm lại mở rộng lên 10 km, cơ sở dữ liệu dùng chung trên Supabase có nhiều thợ thử nghiệm ở khoảng cách 0m, khiến mệnh đề `LIMIT 20` cắt bớt thợ ở xa hơn (2.7 km).
     *Giải pháp:* Cô lập vị trí kiểm thử với tọa độ chuyên biệt để đảm bảo kiểm thử chính xác các nhánh điều kiện loại trừ `DECLINED` và mời lại thợ `EXPIRED`.
+
+---
+
+## 11. Biên bản bàn giao đợt BE05 · Máy trạng thái, hủy và quote phiên bản
+
+- **Thời điểm nghiệm thu:** 2026-11-22
+- **Trạng thái:** Hoàn tất trọn vẹn mọi yêu cầu của BE05.
+- **Kết quả kiểm thử:**
+  - `BE05StateMachineAndQuoteVersionTests`: **12/12 test cases PASS (100%)**.
+  - `QuoteNegotiationWorkflowTests`: **34/34 test cases PASS (100%)**.
+  - `BookingCompletionAndReviewWorkflowTests`: **25/25 test cases PASS (100%)**.
+  - Toàn bộ test suite repository: **201/201 test cases PASS (100% không suy thoái)**.
+  - Lệnh kiểm tra thực tế:
+    - `.\mvnw.cmd test -Dtest=BE05StateMachineAndQuoteVersionTests`
+    - `.\mvnw.cmd test`
+- **Các ca kiểm thử đã xác thực trong BE05 (`BE05StateMachineAndQuoteVersionTests`):**
+  1. `testSequentialStateMachineTransitions`: Xác thực vòng đời chuyển trạng thái máy tuần tự từ `SELECTED_PROVIDER` → `PROVIDER_EN_ROUTE` → `INSPECTING` → Tạo quote v1 `PENDING` → Khách duyệt v1 chuyển `IN_PROGRESS` → Thợ hoàn thành sửa (`complete`) chuyển `WAITING_PAYMENT` → Thợ xác nhận thanh toán (`confirmPayment`) chuyển `COMPLETED`.
+  2. `testCancelSearchingOnlyCustomer`: Ở trạng thái `SEARCHING`, chỉ có Khách tạo đơn mới có quyền hủy; Thợ lạ gọi hủy bị từ chối `403 Forbidden`.
+  3. `testCancelInEarlyStatuses`: Cả Khách và Thợ đều có quyền hủy đơn ở các trạng thái trước khi bắt đầu sửa chữa: `SELECTED_PROVIDER`, `PROVIDER_EN_ROUTE`, `INSPECTING`.
+  4. `testCancelInProgressRules`: Ma trận hủy khi `IN_PROGRESS`: Thợ luôn có quyền hủy; Khách **chỉ được hủy khi có quote `PENDING`** (khách từ chối báo giá phát sinh). Khách cố hủy khi không có quote `PENDING` bị từ chối `409 Conflict`. Trong cùng một giao dịch hủy: Toàn bộ offer `PENDING`/`ACCEPTED` chuyển sang `EXPIRED`, quote `PENDING` chuyển sang `CANCELLED`, giữ nguyên quote `ACCEPTED` cũ làm chứng từ lịch sử.
+  5. `testCannotCancelInTerminalStatuses`: Tuyệt đối không ai được phép hủy đơn khi đã ở các trạng thái kết thúc: `WAITING_PAYMENT`, `COMPLETED`, `CANCELLED` (`409 Conflict`).
+  6. `testStaleAcceptAfterReviseOrRollback`: Stale accept: Khi thợ đã gửi sửa báo giá (revise) khiến v1 chuyển sang `CANCELLED` và tạo v2 `PENDING`, khách từ tab cũ bấm accept ID của v1 bị từ chối `409 Conflict` ("Only PENDING quotes can be accepted"), hệ thống không tự động nhảy sang v2. Khách bấm đúng ID v2 thành công.
+  7. `testStaleAcceptAfterRollback`: Stale accept sau rollback: Khi thợ rollback quote phát sinh v2 về lại v1, khách bấm accept v2 bị từ chối `409 Conflict`.
+  8. `testConcurrentAcceptAndRevise`: Kiểm thử tương tranh đa luồng giữa Khách accept quote v1 và Thợ revise quote v1. Nhờ khóa bi quan `PESSIMISTIC_WRITE` trên dòng `bookings`, cả 2 luồng tuần tự hóa an toàn, không bao giờ xảy ra tình trạng tồn tại 2 quote `PENDING` hoặc trạng thái dữ liệu bất thường.
+  9. `testCompleteBlockedWhenPendingQuoteExists`: Thợ gọi hoàn thành sửa chữa (`complete`) khi vẫn còn quote `PENDING` phát sinh đang chờ duyệt bị từ chối `409 Conflict`.
+  10. `testCompleteSuccessWithoutChecklistPayload`: Thợ hoàn thành sửa chữa thành công khi đủ 3 điều kiện: thợ được gán, đang `IN_PROGRESS`, có đúng 1 quote `ACCEPTED`, và 0 quote `PENDING`. Không yêu cầu bất kỳ checklist payload nào (checklist hoàn toàn thuộc tầng UI).
+  11. `testCompleteUnauthorized`: Khách hàng hoặc Thợ khác cố tình gọi `complete` bị từ chối `403 Forbidden`.
+  12. `testAutomaticPricingAndVersioningChain`: Kiểm chứng tính tiền tự động (`amount = quantity * unitPrice`, `totalAmount = sum(amount)`) và chuỗi version qua cả 3 trường hợp revise:
+      - TH1 (chỉ có PENDING): v1 CANCELLED → v2 PENDING (`based_on_quote_id = null`). Khách accept v2 → v2 ACCEPTED, booking IN_PROGRESS.
+      - TH2 (chỉ có ACCEPTED): giữ v2 ACCEPTED, tạo v3 PENDING (`based_on_quote_id = v2.id`).
+      - TH3 (có cả ACCEPTED và PENDING): v3 CANCELLED, giữ v2 ACCEPTED, tạo v4 PENDING (`based_on_quote_id = v2.id`, không trỏ vào v3).
+      - Khách accept v4: v2 ACCEPTED chuyển `SUPERSEDED`, v4 chuyển `ACCEPTED`.
+      - `getQuotesForBooking` trả về đầy đủ 4 phiên bản tăng dần theo version với đúng mã và trạng thái lịch sử.
+- **Tập tin đã thay đổi & tạo mới:**
+  - `src/main/java/com/nhom6/motofix/entity/RepairQuoteItem.java`: Bổ sung `getEffectiveStatus()` để item nhận trạng thái hiệu lực tự động từ Quote chứa nó theo đặc tả, loại bỏ phụ thuộc status riêng của item khỏi nghiệp vụ lõi.
+  - `src/main/java/com/nhom6/motofix/dto/respond/QuoteItemResponse.java`: Ánh xạ `status` lấy từ `item.getEffectiveStatus()`.
+  - `src/main/java/com/nhom6/motofix/repository/BookingOfferRepository.java`: Bổ sung `clearAutomatically = true, flushAutomatically = true` cho các phương thức modifying update (`expireAllOffersForBooking`, `expireRemainingOffers`, `expireOffers`) để đồng bộ ngay lập tức Persistence Context với DB khi hủy đơn.
+  - `src/test/java/com/nhom6/motofix/BE05StateMachineAndQuoteVersionTests.java` *(Mới)*: Bộ test 12 ca kiểm thử chuyên sâu cho toàn bộ yêu cầu của đợt BE05.
+  - `docs/motofix/api-contract.md`: Cập nhật phiên bản 1.5.0, bổ sung quy ước BE05 cho Item hiệu lực và checklist UI.
+  - `docs/motofix/audit.md`: Cập nhật tiến độ hoàn thành BE05.
+- **Trở ngại & Giải pháp:**
+  - *Trở ngại 1:* Khi hủy đơn trong giao dịch kiểm thử có `@Transactional`, phương thức `@Modifying UPDATE` trên `BookingOfferRepository` cập nhật trực tiếp database nhưng không làm mới 1st-level cache của Hibernate. Khi test đọc lại `offerPending`, Hibernate trả về đối tượng cũ trong bộ nhớ đệm (vẫn mang status `PENDING`) gây lỗi assertion.
+    *Giải pháp:* Thêm thuộc tính `(flushAutomatically = true, clearAutomatically = true)` vào annotation `@Modifying` của `expireAllOffersForBooking` và các truy vấn liên quan trong `BookingOfferRepository.java`.
 

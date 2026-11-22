@@ -1,7 +1,7 @@
 # MotoFix Backend · Hợp đồng API (API Contract)
 
-> **Phiên bản tài liệu:** 1.4.0 (Hoàn thành đợt BE04 · Offer, tìm lại 5/10/15 km và chọn thợ)  
-> **Phiên bản mã nguồn cơ sở (Git commit):** `BE04-release` (Branch: `main`)  
+> **Phiên bản tài liệu:** 1.5.0 (Hoàn thành đợt BE05 · Máy trạng thái, hủy và quote phiên bản)  
+> **Phiên bản mã nguồn cơ sở (Git commit):** `BE05-release` (Branch: `main`)  
 > **Hệ thống:** Java 17 / Spring Boot 4.1.1 / PostgreSQL 17.6 PostGIS / Supabase Storage  
 
 ---
@@ -685,7 +685,16 @@
 ### 8.5. Xem danh sách các phiên bản báo giá `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `GET /api/bookings/{id}/quotes`
 - **Role:** Khách chủ đơn hoặc Thợ phụ trách
-- **Response:** `200 OK` (Danh sách các phiên bản quote sắp xếp giảm dần theo version).
+- **Response:** `200 OK` (Danh sách các phiên bản quote sắp xếp tăng dần theo version; kèm `basedOnQuoteId` và danh sách items mà mỗi item lấy trạng thái hiệu lực trực tiếp từ quote chứa nó).
+
+### 8.6. Xem chi tiết một phiên bản báo giá `[ĐÃ KIỂM THỬ]`
+- **Method & Path:** `GET /api/bookings/{id}/quotes/{quoteId}`
+- **Role:** Khách chủ đơn hoặc Thợ phụ trách
+- **Response:** `200 OK` (`QuoteResponse` chi tiết của phiên bản được yêu cầu).
+
+### 8.7. Quy tắc Item và Checklist Hoàn thành (BE05 Standard)
+- **Hiệu lực Item:** Loại bỏ phụ thuộc status riêng của từng item khỏi entity và DTO. Mỗi item nhận trạng thái hiệu lực tự động từ Quote chứa nó (`PENDING`, `ACCEPTED`, `CANCELLED`).
+- **Checklist thợ:** Hoàn toàn nằm ở tầng UI; API `PATCH /api/bookings/{id}/complete` không yêu cầu và không phụ thuộc vào bất kỳ payload checklist nào, hoàn thành sửa chữa thành công khi đủ 3 điều kiện backend (IN_PROGRESS, đúng 1 ACCEPTED, không còn PENDING).
 
 ---
 

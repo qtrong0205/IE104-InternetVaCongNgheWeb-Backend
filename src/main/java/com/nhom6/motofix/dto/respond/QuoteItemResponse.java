@@ -30,7 +30,7 @@ public record QuoteItemResponse(
                 item.getUnitPrice(),
                 item.getDescription(),
                 item.getAmount(),
-                item.getStatus(),
+                item.getEffectiveStatus(),
                 item.getCreatedAt()
         );
     }

@@ -30,7 +30,7 @@ public interface BookingOfferRepository extends JpaRepository<BookingOffer, UUID
             @Param("bookingId") UUID bookingId,
             @Param("status") OfferStatus status);
 
-    @Modifying
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
         UPDATE BookingOffer o SET o.status = :expiredStatus
         WHERE o.booking.id = :bookingId
@@ -43,7 +43,7 @@ public interface BookingOfferRepository extends JpaRepository<BookingOffer, UUID
             @Param("expiredStatus") OfferStatus expiredStatus,
             @Param("activeStatuses") List<OfferStatus> activeStatuses);
 
-    @Modifying
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
         UPDATE BookingOffer o SET o.status = :expiredStatus
         WHERE o.booking.id = :bookingId
@@ -55,7 +55,7 @@ public interface BookingOfferRepository extends JpaRepository<BookingOffer, UUID
             @Param("activeStatuses") List<OfferStatus> activeStatuses);
 
     // Set status cho các offers hết hạn
-    @Modifying
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
         UPDATE BookingOffer o SET o.status = :to
         WHERE o.status = :from AND o.expiresAt < :now
