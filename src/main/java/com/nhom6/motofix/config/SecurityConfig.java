@@ -48,6 +48,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(DispatcherType.FORWARD, DispatcherType.ERROR).permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/ws/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/providers/{providerId}").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/providers/{providerId}/reviews").permitAll()
                         .anyRequest().authenticated() // Tất cả API khác đều cần đăng nhập
                 )
                 .addFilterBefore(

@@ -8,6 +8,7 @@ import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.enums.ApprovalStatus;
 import com.nhom6.motofix.enums.BookingStatus;
 import com.nhom6.motofix.enums.OfferStatus;
+import com.nhom6.motofix.enums.SyncEventType;
 import com.nhom6.motofix.exception.BadRequestException;
 import com.nhom6.motofix.exception.ConflictException;
 import com.nhom6.motofix.exception.ResourceNotFoundException;
@@ -30,6 +31,7 @@ public class OfferService {
     private final ProviderProfileRepository providerProfileRepository;
     private final BookingRepository bookingRepository;
     private final OfferMapper offerMapper;
+    private final WebSocketSyncService webSocketSyncService;
 
     @Transactional
     public OfferResultResponse reject(UUID offerId, DeclineOfferRequest request, User user) {
@@ -37,8 +39,17 @@ public class OfferService {
 
         offer.setNote(request == null ? null : request.note());
         offer.setStatus(OfferStatus.DECLINED);
+        BookingOffer saved = offerRepository.save(offer);
 
-        return offerMapper.toOfferResultResponse(offer);
+        webSocketSyncService.notifyBookingStatusChanged(
+                offer.getBooking(),
+                SyncEventType.OFFER_DECLINED,
+                user,
+                "Thợ đã từ chối yêu cầu cứu hộ",
+                offer.getId()
+        );
+
+        return offerMapper.toOfferResultResponse(saved);
     }
 
     @Transactional
@@ -63,8 +74,11 @@ public class OfferService {
         offer.setEstimatedArrivalMinutes(request.estimatedArrivalMinutes());
         offer.setNote(request.note());
         offer.setStatus(OfferStatus.ACCEPTED);
+        BookingOffer saved = offerRepository.save(offer);
 
-        return offerMapper.toOfferResultResponse(offer);
+        webSocketSyncService.notifyOfferAccepted(offer.getBooking(), saved, user);
+
+        return offerMapper.toOfferResultResponse(saved);
     }
 
     // Dùng chung cho accept và reject

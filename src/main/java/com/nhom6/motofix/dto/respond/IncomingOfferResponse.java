@@ -41,4 +41,34 @@ public record IncomingOfferResponse(
     ) {
         this(offerId, bookingId, OfferStatus.PENDING, problemDescription, null, latitude, longitude, null, null, null, null, distanceM, sentAt, expiresAt, null, null, null, null);
     }
+
+    public static IncomingOfferResponse from(com.nhom6.motofix.entity.BookingOffer o) {
+        if (o == null) return null;
+        com.nhom6.motofix.entity.Booking b = o.getBooking();
+        List<UploadMediaResponse> mediaResponses = (b != null && b.getMedia() != null) ?
+                b.getMedia().stream()
+                        .map(m -> new UploadMediaResponse(m.getUrl(), m.getType()))
+                        .toList() : null;
+
+        return new IncomingOfferResponse(
+                o.getId(),
+                b != null ? b.getId() : null,
+                o.getStatus(),
+                b != null ? b.getProblemDescription() : null,
+                b != null ? b.getAddress() : null,
+                b != null ? b.getLatitude() : null,
+                b != null ? b.getLongitude() : null,
+                b != null ? b.getVehicleBrand() : null,
+                b != null ? b.getVehicleModel() : null,
+                b != null ? b.getVehicleLicensePlate() : null,
+                mediaResponses,
+                o.getDistanceM(),
+                o.getCreatedAt(),
+                o.getExpiresAt(),
+                o.getEstimatedMin(),
+                o.getEstimatedMax(),
+                o.getEstimatedArrivalMinutes(),
+                o.getNote()
+        );
+    }
 }

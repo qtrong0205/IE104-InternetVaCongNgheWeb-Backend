@@ -6,6 +6,7 @@ import com.nhom6.motofix.dto.request.CreateBookingRequest;
 import com.nhom6.motofix.dto.request.SearchRoundRequest;
 import com.nhom6.motofix.dto.respond.BookingOfferSummaryResponse;
 import com.nhom6.motofix.dto.respond.BookingResponse;
+import com.nhom6.motofix.dto.respond.IncomingOfferResponse;
 import com.nhom6.motofix.dto.respond.SearchRoundResponse;
 import com.nhom6.motofix.entity.Booking;
 import com.nhom6.motofix.entity.BookingMedia;
@@ -17,6 +18,7 @@ import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.enums.BookingStatus;
 import com.nhom6.motofix.enums.OfferStatus;
 import com.nhom6.motofix.enums.QuoteStatus;
+import com.nhom6.motofix.enums.SyncEventType;
 import com.nhom6.motofix.exception.BadRequestException;
 import com.nhom6.motofix.exception.ConflictException;
 import com.nhom6.motofix.exception.ResourceNotFoundException;
@@ -52,6 +54,7 @@ public class BookingService {
     private final ProviderProfileRepository providerProfileRepository;
     private final BookingOfferRepository bookingOfferRepository;
     private final RepairQuoteRepository quoteRepository;
+    private final WebSocketSyncService webSocketSyncService;
 
     @Value("${booking.offer-radius-m}")
     private Double searchRadiusM;
@@ -158,7 +161,11 @@ public class BookingService {
             return offer;
         }).toList();
 
-        bookingOfferRepository.saveAll(offers);
+        List<BookingOffer> savedOffers = bookingOfferRepository.saveAll(offers);
+        for (BookingOffer o : savedOffers) {
+            webSocketSyncService.notifyOfferNew(o.getProvider().getId(), IncomingOfferResponse.from(o));
+        }
+        webSocketSyncService.notifyBookingStatusChanged(saved, SyncEventType.BOOKING_STATUS_CHANGED, user, "Đang tìm kiếm thợ cứu hộ gần bạn", null);
 
         return bookingMapper.toBookingResponse(saved);
     }
@@ -325,6 +332,15 @@ public class BookingService {
 
         log.info("Customer {} selected offer {} (provider {}) for booking {}", customerId, offerId, providerId, bookingId);
 
+        webSocketSyncService.notifyProviderSelected(saved, providerId, booking.getCustomer());
+        if (booking.getOffers() != null) {
+            for (BookingOffer o : booking.getOffers()) {
+                if (o.getProvider() != null && !o.getProvider().getId().equals(providerId)) {
+                    webSocketSyncService.notifyOfferExpired(o.getProvider().getId(), o.getId(), bookingId);
+                }
+            }
+        }
+
         return bookingMapper.toBookingResponse(saved);
     }
 
@@ -407,7 +423,10 @@ public class BookingService {
         }).toList();
 
         if (!newOffers.isEmpty()) {
-            bookingOfferRepository.saveAll(newOffers);
+            List<BookingOffer> savedOffers = bookingOfferRepository.saveAll(newOffers);
+            for (BookingOffer o : savedOffers) {
+                webSocketSyncService.notifyOfferNew(o.getProvider().getId(), IncomingOfferResponse.from(o));
+            }
         }
 
         String message = newOffers.isEmpty()
@@ -439,6 +458,14 @@ public class BookingService {
         Booking saved = bookingRepository.save(booking);
         log.info("Provider {} is en-route for booking {}", user.getId(), bookingId);
 
+        webSocketSyncService.notifyBookingStatusChanged(
+                saved,
+                SyncEventType.BOOKING_STATUS_CHANGED,
+                user,
+                "Thợ đang di chuyển đến vị trí của bạn",
+                null
+        );
+
         return bookingMapper.toBookingResponse(saved);
     }
 
@@ -460,6 +487,14 @@ public class BookingService {
         booking.setStatus(BookingStatus.INSPECTING);
         Booking saved = bookingRepository.save(booking);
         log.info("Provider {} arrived at location for booking {}", user.getId(), bookingId);
+
+        webSocketSyncService.notifyBookingStatusChanged(
+                saved,
+                SyncEventType.BOOKING_STATUS_CHANGED,
+                user,
+                "Thợ đã đến nơi và đang kiểm tra xe",
+                null
+        );
 
         return bookingMapper.toBookingResponse(saved);
     }
@@ -509,6 +544,14 @@ public class BookingService {
         Booking saved = bookingRepository.save(booking);
         log.info("Provider {} completed repair for booking {}, status moved to WAITING_PAYMENT", user.getId(), bookingId);
 
+        webSocketSyncService.notifyBookingStatusChanged(
+                saved,
+                SyncEventType.BOOKING_COMPLETED_REPAIR,
+                user,
+                "Thợ đã hoàn thành sửa chữa, vui lòng kiểm tra và thanh toán",
+                null
+        );
+
         return bookingMapper.toBookingResponse(saved);
     }
 
@@ -551,6 +594,14 @@ public class BookingService {
         Booking saved = bookingRepository.save(booking);
         log.info("Provider {} confirmed payment via {} for booking {}, status moved to COMPLETED",
                 user.getId(), request.method(), bookingId);
+
+        webSocketSyncService.notifyBookingStatusChanged(
+                saved,
+                SyncEventType.PAYMENT_CONFIRMED,
+                user,
+                "Thanh toán đã được xác nhận thành công",
+                saved.getPaymentMethod()
+        );
 
         return bookingMapper.toBookingResponse(saved);
     }
@@ -620,6 +671,14 @@ public class BookingService {
         log.info("Booking {} cancelled by user {} (role: {}). Reason: {}",
                 bookingId, user.getId(), isCustomer ? "CUSTOMER" : "PROVIDER",
                 (request != null ? request.reason() : "N/A"));
+
+        webSocketSyncService.notifyBookingStatusChanged(
+                saved,
+                SyncEventType.BOOKING_CANCELLED,
+                user,
+                "Đơn cứu hộ đã bị hủy: " + (request != null ? request.reason() : "Không có lý do"),
+                null
+        );
 
         return bookingMapper.toBookingResponse(saved);
     }

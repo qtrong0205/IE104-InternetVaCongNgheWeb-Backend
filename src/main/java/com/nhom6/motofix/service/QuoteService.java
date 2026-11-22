@@ -9,6 +9,7 @@ import com.nhom6.motofix.entity.RepairQuoteItem;
 import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.enums.BookingStatus;
 import com.nhom6.motofix.enums.QuoteStatus;
+import com.nhom6.motofix.enums.SyncEventType;
 import com.nhom6.motofix.exception.ConflictException;
 import com.nhom6.motofix.exception.ResourceNotFoundException;
 import com.nhom6.motofix.repository.BookingRepository;
@@ -30,6 +31,7 @@ import java.util.UUID;
 public class QuoteService {
     private final BookingRepository bookingRepository;
     private final RepairQuoteRepository quoteRepository;
+    private final WebSocketSyncService webSocketSyncService;
 
     /**
      * Provider tạo báo giá chẩn đoán phiên bản đầu tiên (version 1).
@@ -85,6 +87,15 @@ public class QuoteService {
 
         RepairQuote saved = quoteRepository.save(quote);
         log.info("Provider {} created quote v1 for booking {}, total amount: {}", user.getId(), bookingId, totalAmount);
+
+        webSocketSyncService.notifyQuoteEvent(
+                booking,
+                SyncEventType.QUOTE_NEW,
+                saved.getVersion(),
+                user,
+                "Thợ đã gửi báo giá chẩn đoán ban đầu",
+                saved.getId()
+        );
 
         return QuoteResponse.from(saved);
     }
@@ -164,6 +175,15 @@ public class QuoteService {
 
         RepairQuote savedQuote = quoteRepository.save(quote);
         log.info("Customer {} accepted quote {} for booking {}", user.getId(), quoteId, bookingId);
+
+        webSocketSyncService.notifyQuoteEvent(
+                booking,
+                SyncEventType.QUOTE_ACCEPTED,
+                savedQuote.getVersion(),
+                user,
+                "Khách hàng đã chấp nhận báo giá",
+                savedQuote.getId()
+        );
 
         return QuoteResponse.from(savedQuote);
     }
@@ -262,6 +282,15 @@ public class QuoteService {
         log.info("Provider {} revised quote (new v{}) for booking {}, based on quote {}",
                 user.getId(), nextVersion, bookingId, (basedQuote != null ? basedQuote.getId() : "null"));
 
+        webSocketSyncService.notifyQuoteEvent(
+                booking,
+                SyncEventType.QUOTE_REVISED,
+                savedQuote.getVersion(),
+                user,
+                "Thợ đã cập nhật lại báo giá (phiên bản v" + nextVersion + ")",
+                savedQuote.getId()
+        );
+
         return QuoteResponse.from(savedQuote);
     }
 
@@ -322,6 +351,15 @@ public class QuoteService {
         log.info("Provider {} rolled back quote {} (v{}) for booking {}, reverted to active accepted quote {} (v{})",
                 user.getId(), pendingQuote.getId(), pendingQuote.getVersion(),
                 bookingId, acceptedQuote.getId(), acceptedQuote.getVersion());
+
+        webSocketSyncService.notifyQuoteEvent(
+                booking,
+                SyncEventType.QUOTE_ROLLBACK,
+                acceptedQuote.getVersion(),
+                user,
+                "Thợ đã hủy báo giá phát sinh và quay lại phiên bản v" + acceptedQuote.getVersion(),
+                acceptedQuote.getId()
+        );
 
         // Trả về DTO của phiên bản ACCEPTED tiếp tục có hiệu lực
         return QuoteResponse.from(acceptedQuote);

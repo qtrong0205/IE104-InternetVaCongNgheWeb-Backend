@@ -73,4 +73,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("startOfDay") LocalDateTime startOfDay,
             @Param("endOfDay") LocalDateTime endOfDay
     );
+
+    @Query("SELECT b FROM Booking b LEFT JOIN FETCH b.customer LEFT JOIN FETCH b.provider p LEFT JOIN FETCH p.user WHERE b.id = :id")
+    Optional<Booking> findByIdWithCustomerAndProvider(@Param("id") UUID id);
 }

@@ -1,7 +1,7 @@
 # MotoFix Backend · Hợp đồng API (API Contract)
 
-> **Phiên bản tài liệu:** 1.6.0 (Hoàn thành đợt BE06 · Thanh toán, doanh thu và đánh giá)  
-> **Phiên bản mã nguồn cơ sở (Git commit):** `BE06-release` (Branch: `main`)  
+> **Phiên bản tài liệu:** 1.7.0 (Hoàn thành đợt BE07 · Đồng bộ WebSocket)  
+> **Phiên bản mã nguồn cơ sở (Git commit):** `BE07-release` (Branch: `main`)  
 > **Hệ thống:** Java 17 / Spring Boot 4.1.1 / PostgreSQL 17.6 PostGIS / Supabase Storage  
 
 ---
@@ -841,12 +841,69 @@
 
 ## 11. Nhóm 10: Đồng bộ thời gian thực & Chat
 
-### 11.1. Kênh WebSocket / STOMP đồng bộ `[ĐỀ XUẤT / CẦN BỔ SUNG]`
-- **Endpoint kết nối:** `/ws` (kèm JWT handshake)
-- **Topic cá nhân của khách:** `/topic/customers/{userId}/bookings`
-- **Topic cá nhân của thợ:** `/topic/providers/{providerId}/offers`
-- **Topic chung của booking:** `/topic/bookings/{bookingId}`
-- **Sự kiện đồng bộ:** `OFFER_NEW`, `OFFER_ACCEPTED`, `PROVIDER_SELECTED`, `STATUS_CHANGED`, `QUOTE_NEW`, `QUOTE_ACCEPTED`, `QUOTE_ROLLBACK`, `BOOKING_COMPLETED`.
+### 11.1. Kênh WebSocket / STOMP đồng bộ `[ĐÃ KIỂM THỬ]`
+- **Endpoint kết nối:** `/ws` (Hỗ trợ native WebSocket và SockJS fallback tại `/ws`).
+- **Giao thức:** STOMP over WebSocket.
+- **Xác thực kết nối (Authentication on CONNECT):**
+  - Header trong frame `CONNECT`: `Authorization: Bearer <jwt_token>` (hoặc header `token` / `passcode`).
+  - `StompAuthChannelInterceptor` trích xuất `userId`, kiểm tra `tokenVersion` và trạng thái `active` của tài khoản, sau đó gán `Principal` cho phiên STOMP.
+- **Phân quyền đăng ký kênh (Authorization on SUBSCRIBE):**
+  1. `/topic/bookings/{bookingId}`:
+     - Chỉ cho phép: Khách hàng chủ đơn (`booking.customer_id == user.id`), Thợ được phân công (`booking.provider.user_id == user.id`), hoặc `ADMIN`.
+     - Người ngoài (khách lạ, thợ khác, hoặc thợ chỉ mới nhận offer nhưng chưa được chọn) cố tình subscribe sẽ bị từ chối và ném `403 AccessDeniedException`.
+  2. `/topic/customers/{userId}/bookings`:
+     - Chỉ người dùng sở hữu `userId` hoặc `ADMIN` được phép subscribe.
+  3. `/topic/providers/{providerId}/offers`:
+     - Chỉ thợ sở hữu `providerProfileId` hoặc `ADMIN` được phép subscribe để nhận offer mới và thông báo hết hạn.
+- **Cơ chế phát sự kiện sau COMMIT (`AFTER_COMMIT`):**
+  - Tất cả các sự kiện đồng bộ được phát qua `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)`.
+  - Nếu giao dịch gặp lỗi và rollback (ví dụ lỗi kiểm tra nghiệp vụ, vi phạm ràng buộc), **tuyệt đối không phát sự kiện ra WebSocket**.
+- **Danh mục sự kiện đồng bộ (`SyncEventType`):**
+  - `OFFER_NEW`: Phát tới `/topic/providers/{providerId}/offers` khi có offer cứu hộ mới trong vùng quét.
+  - `OFFER_ACCEPTED`: Phát tới `/topic/bookings/{bookingId}` khi thợ đồng ý nhận offer và gửi báo giá ước tính.
+  - `OFFER_DECLINED`: Phát tới `/topic/bookings/{bookingId}` khi thợ từ chối offer.
+  - `OFFER_EXPIRED`: Phát tới `/topic/providers/{providerId}/offers` khi offer hết hạn hoặc bị hủy do khách chọn thợ khác.
+  - `PROVIDER_SELECTED`: Phát tới `/topic/bookings/{bookingId}` và `/topic/providers/{providerId}/offers` khi khách chọn thợ.
+  - `BOOKING_STATUS_CHANGED`: Phát tới `/topic/bookings/{bookingId}` khi trạng thái di chuyển/khám xe thay đổi (`PROVIDER_EN_ROUTE`, `INSPECTING`).
+  - `QUOTE_NEW`: Phát tới `/topic/bookings/{bookingId}` khi thợ gửi chẩn đoán báo giá v1 (`PENDING`).
+  - `QUOTE_REVISED`: Phát tới `/topic/bookings/{bookingId}` khi thợ cập nhật phiên bản báo giá mới (`PENDING`).
+  - `QUOTE_ACCEPTED`: Phát tới `/topic/bookings/{bookingId}` khi khách chấp nhận báo giá (chuyển `IN_PROGRESS`).
+  - `QUOTE_ROLLBACK`: Phát tới `/topic/bookings/{bookingId}` khi thợ rollback báo giá phát sinh về bản `ACCEPTED` trước đó.
+  - `BOOKING_COMPLETED_REPAIR`: Phát tới `/topic/bookings/{bookingId}` khi thợ hoàn thành sửa chữa (chuyển `WAITING_PAYMENT`).
+  - `PAYMENT_CONFIRMED`: Phát tới `/topic/bookings/{bookingId}` khi thợ xác nhận nhận tiền (chuyển `COMPLETED`).
+  - `BOOKING_CANCELLED`: Phát tới `/topic/bookings/{bookingId}` khi đơn bị hủy bởi khách hoặc thợ.
+- **Cấu trúc Payload chuẩn (`SyncEventPayload`):**
+  ```json
+  {
+    "eventId": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6",
+    "eventType": "BOOKING_STATUS_CHANGED",
+    "bookingId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "status": "PROVIDER_EN_ROUTE",
+    "statusOrder": 3,
+    "quoteVersion": null,
+    "timestamp": "2026-11-22T23:30:00",
+    "actorId": "1fa85f64-5717-4562-b3fc-2c963f66afa1",
+    "message": "Thợ đang di chuyển đến vị trí của bạn",
+    "data": null,
+    "snapshotUrl": "/api/bookings/3fa85f64-5717-4562-b3fc-2c963f66afa6"
+  }
+  ```
+- **Cơ chế chống lùi bước trạng thái & Chống nhân đôi doanh thu:**
+  1. *Thứ tự trạng thái đơn điệu (`statusOrder`):*
+     - `SEARCHING = 1`
+     - `SELECTED_PROVIDER / PROVIDER_SELECTED = 2`
+     - `PROVIDER_EN_ROUTE = 3`
+     - `INSPECTING / AWAITING_QUOTE_APPROVAL = 4`
+     - `IN_PROGRESS = 5`
+     - `WAITING_PAYMENT = 6`
+     - `COMPLETED = 7`
+     - `CANCELLED = 8`
+     - Client so sánh `event.statusOrder <= client.currentStatusOrder` để phát hiện và tự động bỏ qua các sự kiện cũ/muộn hoặc sự kiện lặp, ngăn ngừa tình trạng lùi bước màn hình giao diện.
+  2. *Khôi phục trạng thái (Reconnect Snapshot):*
+     - Khi mất kết nối mạng và kết nối lại, Client gọi HTTP `GET` đến trường `snapshotUrl` (`/api/bookings/active` hoặc `/api/bookings/{id}`) để lấy lại trạng thái chuẩn xác nhất từ cơ sở dữ liệu backend.
+  3. *Chống nhân đôi doanh thu:*
+     - Lệnh xác nhận thanh toán (`PATCH /api/bookings/{id}/payment/confirm`) kiểm tra nghiêm ngặt `WAITING_PAYMENT`; thao tác lặp lại bị từ chối `409 Conflict`.
+     - Doanh thu backend chỉ ghi nhận một lần duy nhất theo `completedAt` và quote `ACCEPTED` cuối cùng của đơn.
 
 ### 11.2. Nhắn tin (Chat) hai bên `[ĐỀ XUẤT / CẦN BỔ SUNG]`
 - **Gửi tin:** `POST /api/bookings/{id}/messages` (hoặc gửi qua WebSocket STOMP)
