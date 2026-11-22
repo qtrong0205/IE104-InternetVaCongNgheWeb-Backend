@@ -39,6 +39,9 @@ public class Booking {
     @Column(name = "vehicle_license_plate", length = 30)
     private String vehicleLicensePlate;
 
+    @Column(name = "search_round")
+    private Integer searchRound = 1;
+
     @Column(nullable = false)
     private Double latitude;
 

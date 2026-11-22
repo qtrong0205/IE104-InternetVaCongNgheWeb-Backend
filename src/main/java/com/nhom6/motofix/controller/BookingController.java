@@ -7,11 +7,13 @@ import com.nhom6.motofix.dto.request.CreateBookingRequest;
 import com.nhom6.motofix.dto.request.CreateQuoteRequest;
 import com.nhom6.motofix.dto.request.CreateReviewRequest;
 import com.nhom6.motofix.dto.request.DeclineOfferRequest;
+import com.nhom6.motofix.dto.request.SearchRoundRequest;
 import com.nhom6.motofix.dto.respond.BookingOfferSummaryResponse;
 import com.nhom6.motofix.dto.respond.BookingResponse;
 import com.nhom6.motofix.dto.respond.OfferResultResponse;
 import com.nhom6.motofix.dto.respond.QuoteResponse;
 import com.nhom6.motofix.dto.respond.ReviewResponse;
+import com.nhom6.motofix.dto.respond.SearchRoundResponse;
 import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.enums.BookingStatus;
 import com.nhom6.motofix.service.BookingService;
@@ -130,6 +132,20 @@ public class BookingController {
             @AuthenticationPrincipal User user
     ) {
         return ResponseEntity.ok(bookingService.selectOffer(id, offerId, user.getId()));
+    }
+
+    /**
+     * API kích hoạt vòng tìm lại mở rộng bán kính (5 km -> 10 km -> 15 km).
+     * POST /api/bookings/{id}/search-rounds
+     */
+    @PostMapping("/{id}/search-rounds")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'USER')")
+    public ResponseEntity<SearchRoundResponse> triggerSearchRound(
+            @PathVariable UUID id,
+            @RequestBody(required = false) SearchRoundRequest request,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(bookingService.triggerSearchRound(id, request, user));
     }
 
     @PatchMapping("/{id}/en-route")

@@ -3,12 +3,15 @@ package com.nhom6.motofix.service;
 import com.nhom6.motofix.dto.request.CancelBookingRequest;
 import com.nhom6.motofix.dto.request.ConfirmPaymentRequest;
 import com.nhom6.motofix.dto.request.CreateBookingRequest;
+import com.nhom6.motofix.dto.request.SearchRoundRequest;
 import com.nhom6.motofix.dto.respond.BookingOfferSummaryResponse;
 import com.nhom6.motofix.dto.respond.BookingResponse;
+import com.nhom6.motofix.dto.respond.SearchRoundResponse;
 import com.nhom6.motofix.entity.Booking;
 import com.nhom6.motofix.entity.BookingMedia;
 import com.nhom6.motofix.entity.BookingOffer;
 import com.nhom6.motofix.entity.NearbyProviderView;
+import com.nhom6.motofix.entity.ProviderProfile;
 import com.nhom6.motofix.entity.RepairQuote;
 import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.enums.BookingStatus;
@@ -130,9 +133,9 @@ public class BookingService {
 
         var saved = bookingRepository.save(booking);
 
-        // 5. Tìm top N provider gần nhất và phát offer trong cùng giao dịch
-        List<NearbyProviderView> providers = providerProfileRepository.findNearby(
-                request.latitude(), request.longitude(), searchRadiusM, maxProviders);
+        // 5. Tìm top N provider đủ điều kiện gần nhất và phát offer trong cùng giao dịch
+        List<NearbyProviderView> providers = providerProfileRepository.findNearbyEligibleProviders(
+                request.latitude(), request.longitude(), searchRadiusM, saved.getId(), userId, maxProviders);
 
         LocalDateTime expiresAt = LocalDateTime.now().plus(offerTtl);
 
@@ -241,11 +244,12 @@ public class BookingService {
         }).toList();
     }
 
-    //Chọn thợ cho booking
+    // Chọn thợ cho booking
     @Transactional
     public BookingResponse selectOffer(UUID bookingId, UUID offerId, UUID customerId) {
+        // 1. Khóa bi quan booking để tránh 2 tab của cùng một khách bấm chọn đồng thời
         Booking booking = bookingRepository.findByIdWithLock(bookingId)
-                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found: " + bookingId));
 
         if (!booking.getCustomer().getId().equals(customerId)) {
             throw new UnauthorizedException("You do not have permission to select an offer for this booking");
@@ -256,21 +260,45 @@ public class BookingService {
         }
 
         BookingOffer offer = bookingOfferRepository.findById(offerId)
-                .orElseThrow(() -> new ResourceNotFoundException("Offer not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Offer not found: " + offerId));
 
         if (!offer.getBooking().getId().equals(bookingId)) {
             throw new BadRequestException("Offer does not belong to this booking");
         }
 
         if (offer.getStatus() != OfferStatus.ACCEPTED) {
+            UUID provId = offer.getProvider() != null ? offer.getProvider().getId() : null;
+            if (provId != null && bookingRepository.hasActiveBookings(provId, UserService.ACTIVE_PROVIDER_STATUSES)) {
+                throw new ConflictException("Thợ vừa nhận đơn khác, vui lòng chọn thợ khác");
+            }
             throw new BadRequestException("Only ACCEPTED offers can be selected");
         }
 
-        booking.setProvider(offer.getProvider());
-        booking.setStatus(BookingStatus.PROVIDER_SELECTED);
+        // 2. Khóa bi quan ProviderProfile để tuần tự hóa việc chọn thợ giữa các khách hàng khác nhau
+        UUID providerId = offer.getProvider().getId();
+        ProviderProfile provider = providerProfileRepository.findByIdWithLock(providerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Provider not found: " + providerId));
+
+        // 3. Kiểm tra tính khả dụng của thợ tại thời điểm chọn
+        if (!provider.isActive()) {
+            offer.setStatus(OfferStatus.EXPIRED);
+            bookingOfferRepository.save(offer);
+            throw new ConflictException("Thợ đã tắt nhận việc hoặc đã đăng xuất, vui lòng chọn thợ khác");
+        }
+
+        boolean isBusy = bookingRepository.hasActiveBookings(providerId, UserService.ACTIVE_PROVIDER_STATUSES);
+        if (isBusy) {
+            offer.setStatus(OfferStatus.EXPIRED);
+            bookingOfferRepository.save(offer);
+            throw new ConflictException("Thợ vừa nhận đơn khác, vui lòng chọn thợ khác");
+        }
+
+        // 4. Gán thợ cho booking này và cập nhật trạng thái
+        booking.setProvider(provider);
+        booking.setStatus(BookingStatus.SELECTED_PROVIDER);
         Booking saved = bookingRepository.save(booking);
 
-        // Expire all other offers (PENDING, ACCEPTED)
+        // 5. Expire toàn bộ các offer còn lại của booking này (PENDING và ACCEPTED)
         bookingOfferRepository.expireRemainingOffers(
                 bookingId,
                 offerId,
@@ -278,9 +306,109 @@ public class BookingService {
                 List.of(OfferStatus.PENDING, OfferStatus.ACCEPTED)
         );
 
-        log.info("Customer {} selected offer {} (provider {}) for booking {}", customerId, offerId, offer.getProvider().getId(), bookingId);
+        // 6. Expire toàn bộ các offer còn mở (PENDING và ACCEPTED) của thợ này trên các booking SEARCHING khác
+        bookingOfferRepository.expireOffersForProvider(
+                providerId,
+                OfferStatus.EXPIRED,
+                List.of(OfferStatus.PENDING, OfferStatus.ACCEPTED),
+                BookingStatus.SEARCHING
+        );
+
+        log.info("Customer {} selected offer {} (provider {}) for booking {}", customerId, offerId, providerId, bookingId);
 
         return bookingMapper.toBookingResponse(saved);
+    }
+
+    /**
+     * API kích hoạt vòng tìm lại mở rộng bán kính (5 km -> 10 km -> 15 km).
+     * POST /api/bookings/{id}/search-rounds
+     */
+    @Transactional
+    public SearchRoundResponse triggerSearchRound(UUID bookingId, SearchRoundRequest request, User user) {
+        // 1. Khóa bi quan booking để tuần tự hóa các yêu cầu tìm lại đồng thời (ví dụ 2 tab bấm cùng lúc)
+        Booking booking = bookingRepository.findByIdWithLock(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found: " + bookingId));
+
+        if (!booking.getCustomer().getId().equals(user.getId())) {
+            throw new AccessDeniedException("You do not have permission to trigger search rounds for this booking");
+        }
+
+        if (booking.getStatus() != BookingStatus.SEARCHING) {
+            throw new ConflictException("Đơn không còn ở trạng thái tìm kiếm (SEARCHING)");
+        }
+
+        int currentRound = booking.getSearchRound() != null ? booking.getSearchRound() : 1;
+
+        // Chống gửi lặp cho cùng lượt
+        if (request != null && request.expectedRound() != null && !request.expectedRound().equals(currentRound)) {
+            throw new BadRequestException("Lượt tìm kiếm yêu cầu (" + request.expectedRound() + ") không khớp với lượt hiện tại (" + currentRound + ")");
+        }
+
+        if (currentRound >= 3) {
+            throw new BadRequestException("Đã đạt giới hạn quét tối đa 15 km, không thể mở rộng thêm");
+        }
+
+        // 2. Kiểm tra nếu còn offer PENDING chưa tới hạn
+        LocalDateTime now = LocalDateTime.now();
+        boolean hasPending = bookingOfferRepository.hasActivePendingOffers(bookingId, now);
+        if (hasPending) {
+            throw new ConflictException("Vẫn còn thợ đang trong thời gian phản hồi, vui lòng chờ hết hạn");
+        }
+
+        // 3. Kiểm tra nếu còn offer ACCEPTED có thợ vẫn còn khả dụng
+        List<BookingOffer> acceptedOffers = bookingOfferRepository.findAcceptedOffersWithProvider(bookingId);
+        boolean hasSelectableAccepted = acceptedOffers.stream().anyMatch(o -> {
+            ProviderProfile p = o.getProvider();
+            if (p == null || !p.isActive()) return false;
+            return !bookingRepository.hasActiveBookings(p.getId(), UserService.ACTIVE_PROVIDER_STATUSES);
+        });
+        if (hasSelectableAccepted) {
+            throw new ConflictException("Đang có thợ đồng ý nhận yêu cầu, bạn có thể chọn thợ này");
+        }
+
+        // 4. Xác định bán kính cho lượt mới (vòng 2: 10 km, vòng 3: 15 km)
+        int nextRound = currentRound + 1;
+        double radiusM = nextRound == 2 ? 10000.0 : 15000.0;
+        double radiusKm = radiusM / 1000.0;
+
+        // Ghi nhận lượt mới vào database kể cả khi tìm thấy 0 thợ
+        booking.setSearchRound(nextRound);
+        bookingRepository.save(booking);
+
+        // 5. Quét tìm thợ đủ điều kiện (loại trừ thợ DECLINED, loại trừ thợ đã có PENDING/ACCEPTED trên đơn)
+        List<NearbyProviderView> eligible = providerProfileRepository.findNearbyEligibleProviders(
+                booking.getLatitude(),
+                booking.getLongitude(),
+                radiusM,
+                bookingId,
+                user.getId(),
+                maxProviders
+        );
+
+        LocalDateTime expiresAt = LocalDateTime.now().plus(offerTtl);
+
+        List<BookingOffer> newOffers = eligible.stream().map(p -> {
+            BookingOffer offer = new BookingOffer();
+            offer.setBooking(booking);
+            offer.setProvider(providerProfileRepository.getReferenceById(p.getId()));
+            offer.setStatus(OfferStatus.PENDING);
+            offer.setDistanceM(p.getDistanceM());
+            offer.setExpiresAt(expiresAt);
+            return offer;
+        }).toList();
+
+        if (!newOffers.isEmpty()) {
+            bookingOfferRepository.saveAll(newOffers);
+        }
+
+        String message = newOffers.isEmpty()
+                ? "Không tìm thấy thợ khả dụng trong bán kính " + (int) radiusKm + " km"
+                : "Đang tìm thợ trong bán kính " + (int) radiusKm + " km";
+
+        log.info("Triggered search round {} (radius {}m) for booking {}: dispatched {} offers",
+                nextRound, radiusM, bookingId, newOffers.size());
+
+        return new SearchRoundResponse(nextRound, radiusKm, newOffers.size(), message);
     }
 
     @Transactional

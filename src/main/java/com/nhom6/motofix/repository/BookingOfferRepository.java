@@ -76,4 +76,31 @@ public interface BookingOfferRepository extends JpaRepository<BookingOffer, UUID
             @Param("expiredStatus") OfferStatus expiredStatus,
             @Param("activeOfferStatuses") Collection<OfferStatus> activeOfferStatuses,
             @Param("searchingStatus") BookingStatus searchingStatus);
+
+    @Query("SELECT CASE WHEN COUNT(o) > 0 THEN TRUE ELSE FALSE END FROM BookingOffer o WHERE o.booking.id = :bookingId AND o.status = 'PENDING' AND o.expiresAt > :now")
+    boolean hasActivePendingOffers(@Param("bookingId") UUID bookingId, @Param("now") LocalDateTime now);
+
+    @Query("""
+        SELECT o FROM BookingOffer o
+        JOIN FETCH o.provider p
+        WHERE o.booking.id = :bookingId
+          AND o.status = 'ACCEPTED'
+        """)
+    List<BookingOffer> findAcceptedOffersWithProvider(@Param("bookingId") UUID bookingId);
+
+    @Query("""
+        SELECT o FROM BookingOffer o
+        JOIN FETCH o.booking b
+        LEFT JOIN FETCH b.media
+        WHERE o.provider.id = :providerId
+          AND b.status = :searchingStatus
+          AND (
+            (o.status = 'PENDING' AND o.expiresAt > :now)
+            OR o.status = 'ACCEPTED'
+          )
+        """)
+    List<BookingOffer> findIncomingOffersForProvider(
+            @Param("providerId") UUID providerId,
+            @Param("now") LocalDateTime now,
+            @Param("searchingStatus") BookingStatus searchingStatus);
 }

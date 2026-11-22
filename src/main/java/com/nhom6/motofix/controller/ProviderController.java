@@ -100,4 +100,12 @@ public class ProviderController {
                 .status(HttpStatus.OK)
                 .body(providerService.getIncomingOffers(user));
     }
+
+    @GetMapping("/incoming-offers/{offerId}")
+    public ResponseEntity<IncomingOfferResponse> getOfferDetails(
+            @PathVariable UUID offerId,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(providerService.getOfferDetails(offerId, user));
+    }
 }

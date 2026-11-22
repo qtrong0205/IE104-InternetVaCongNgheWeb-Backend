@@ -1,7 +1,7 @@
 # MotoFix Backend · Hợp đồng API (API Contract)
 
-> **Phiên bản tài liệu:** 1.3.0 (Hoàn thành đợt BE03 · Tạo và đọc booking, xe, media)  
-> **Phiên bản mã nguồn cơ sở (Git commit):** `9509449983f02cf2215cfd8b3b867f0a6f924359` (Branch: `main`)  
+> **Phiên bản tài liệu:** 1.4.0 (Hoàn thành đợt BE04 · Offer, tìm lại 5/10/15 km và chọn thợ)  
+> **Phiên bản mã nguồn cơ sở (Git commit):** `BE04-release` (Branch: `main`)  
 > **Hệ thống:** Java 17 / Spring Boot 4.1.1 / PostgreSQL 17.6 PostGIS / Supabase Storage  
 
 ---
@@ -497,20 +497,26 @@
 
 ## 6. Nhóm 05: Phân phối Offer, Chọn thợ & Tìm lại
 
-### 6.1. Thợ xem danh sách offer đang chờ `[CHỈ THẤY TRONG MÃ]`
+### 6.1. Thợ xem danh sách offer đang chờ `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `GET /api/providers/incoming-offers`
 - **Role:** `PROVIDER` (đang `is_active = true` và không có đơn đang làm).
-- **Response:** `200 OK` (Danh sách offer `PENDING` còn hiệu lực và các offer `ACCEPTED` đang đợi khách chọn).
+- **Hành vi (BE04):** Trả về toàn bộ danh sách offer đang chờ: bao gồm offer `PENDING` còn trong hạn TTL (`expires_at > now`) và các offer `ACCEPTED` trên các đơn `SEARCHING` mà thợ đã gửi báo giá đang đợi khách hàng lựa chọn. Dữ liệu trả về đầy đủ: thông tin xe, sự cố, media, địa chỉ, khoảng cách, thông tin báo giá đã gửi (nếu có).
+- **Response:** `200 OK` (`List<IncomingOfferResponse>`).
 
-### 6.2. Thợ xem chi tiết một offer `[ĐỀ XUẤT / CẦN BỔ SUNG]`
+### 6.2. Thợ xem chi tiết một offer `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `GET /api/providers/incoming-offers/{offerId}`
 - **Role:** `PROVIDER` nhận offer đó
-- **Response:** `200 OK` (Chi tiết thông tin xe, sự cố, ảnh/video, địa chỉ điểm cứu hộ, khoảng cách tính toán).
+- **Hành vi (BE04):** Xem chi tiết thông tin sự cố, ảnh/video, xe snapshot, địa chỉ cứu hộ, khoảng cách tính bằng PostGIS và thông tin báo giá đã gửi (nếu đã ACCEPTED).
+- **Phân quyền:** Chỉ thợ sở hữu offer mới có quyền xem (`403 Forbidden` nếu sai thợ, `404 Not Found` nếu không tồn tại).
+- **Response:** `200 OK` (`IncomingOfferResponse`).
 
-### 6.3. Thợ đồng ý offer `[CHỈ THẤY TRONG MÃ]`
+### 6.3. Thợ đồng ý offer `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `POST /api/bookings/{offerId}/offer/accept`
 - **Role:** `PROVIDER` sở hữu offer
-- **Điều kiện:** Offer đang `PENDING` và chưa hết hạn (`expiresAt > now()`); thợ chưa có công việc active nào khác.
+- **Điều kiện (BE04):**
+  - Offer đang ở trạng thái `PENDING` và chưa hết hạn (`expiresAt > now()`).
+  - Thợ đã được Admin duyệt (`APPROVED`), đang bật nhận việc (`is_active = true`), không ở vai `CUSTOMER`, và không có đơn active nào khác.
+  - Ràng buộc báo giá: `estimatedMin > 0`, `estimatedMax > 0`, `estimatedMax >= estimatedMin`, `estimatedArrivalMinutes > 0` (nguyên dương).
 - **Request Body:**
   ```json
   {
@@ -521,8 +527,9 @@
   }
   ```
 - **Response:** `200 OK` (Offer chuyển sang `ACCEPTED`).
+- **Lỗi tiêu biểu:** `400 Bad Request` nếu offer đã hết hạn hoặc giá/ETA không hợp lệ; `404 Not Found` nếu offer không tồn tại; `403 Forbidden` nếu không phải thợ sở hữu offer.
 
-### 6.4. Thợ từ chối offer `[CHỈ THẤY TRONG MÃ]`
+### 6.4. Thợ từ chối offer `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `POST /api/bookings/{offerId}/offer/reject`
 - **Role:** `PROVIDER` sở hữu offer
 - **Request Body:**
@@ -531,35 +538,56 @@
     "reason": "Đang bận việc cơ sở"
   }
   ```
-- **Response:** `200 OK` (Offer chuyển sang `DECLINED`, thợ bị loại khỏi các vòng tìm lại sau của booking này).
+- **Hành vi (BE04):** Chuyển trạng thái offer sang `DECLINED`. Thợ từng từ chối sẽ tự động bị loại khỏi mọi vòng tìm lại mở rộng sau này (10 km, 15 km) của cùng booking này.
+- **Response:** `200 OK`.
 
-### 6.5. Khách xem danh sách thợ đã đồng ý `[CHỈ THẤY TRONG MÃ]`
+### 6.5. Khách xem danh sách thợ đã đồng ý `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `GET /api/bookings/{id}/offers`
 - **Role:** `CUSTOMER` chủ sở hữu booking
-- **Response:** `200 OK` (Danh sách các offer ở trạng thái `ACCEPTED` kèm giá dự kiến, ETA, điểm đánh giá thợ).
+- **Hành vi (BE04):** Trả về danh sách tất cả các thợ đã gửi báo giá (`ACCEPTED`) cho booking này kèm mức giá ước tính (min - max), ETA đến nơi, ghi chú của thợ, tên tiệm, số điện thoại, điểm đánh giá trung bình và số lượt đánh giá.
+- **Phân quyền:** Chỉ khách chủ đơn mới có quyền xem (`403 Forbidden` nếu truy cập trái phép).
+- **Response:** `200 OK` (`List<BookingOfferSummaryResponse>`).
 
-### 6.6. Khách chọn thợ `[LỆCH - CẦN ĐIỀU CHỈNH]`
+### 6.6. Khách chọn thợ `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `POST /api/bookings/{id}/offers/{offerId}/select`
 - **Role:** `CUSTOMER` chủ booking
-- **Điều kiện trạng thái:** Booking đang `SEARCHING`, offer được chọn đang `ACCEPTED`, thợ được chọn chưa bị khách khác chốt trước.
-- **Xử lý:** Khóa thợ (Pessimistic Write Lock), gán `bookings.provider_id`, chuyển trạng thái booking sang `SELECTED_PROVIDER` (source hiện ghi `PROVIDER_SELECTED`). Chuyển các offer còn lại của booking sang `EXPIRED`.
+- **Điều kiện & Nguyên tử hóa (BE04):**
+  - Khóa bi quan booking (`findByIdWithLock`) chống xung đột bấm chọn từ 2 tab đồng thời của cùng khách.
+  - Khóa bi quan thợ (`findByIdWithLock` trên `ProviderProfile`) nguyên tử hóa năng lực nhận việc giữa các khách hàng khác nhau.
+  - Hai khách chọn cùng một thợ: khách đầu tiên thành công, khách thứ hai bị chặn và nhận `409 Conflict` ("Thợ vừa nhận đơn khác, vui lòng chọn thợ khác").
+  - Gán thợ vào `booking.provider_id` và chuyển trạng thái sang `SELECTED_PROVIDER` (tương thích cả `PROVIDER_SELECTED`).
+  - Tự động chuyển toàn bộ offer còn lại của booking này sang `EXPIRED`.
+  - Tự động chuyển toàn bộ offer còn mở (`PENDING` và `ACCEPTED`) của thợ này trên các booking `SEARCHING` khác sang `EXPIRED`.
 - **Response:** `200 OK` (`BookingResponse`).
 
-### 6.7. Khách yêu cầu tìm lại đa lượt (Search Rounds) `[ĐỀ XUẤT / CẦN BỔ SUNG]`
+### 6.7. Khách yêu cầu tìm lại đa lượt (Search Rounds) `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `POST /api/bookings/{id}/search-rounds`
 - **Role:** `CUSTOMER` chủ booking
-- **Điều kiện trạng thái:** Booking còn `SEARCHING`, lượt trước đã hết thời gian phản hồi, không còn offer PENDING hoặc ACCEPTED nào có thể chọn.
-- **Hành vi (BE04):**
-  - Vòng 2: mở rộng bán kính lên 10 km.
-  - Vòng 3: mở rộng bán kính lên 15 km (trần tối đa).
-  - Không gửi lại cho thợ đã `DECLINED`. Thợ `EXPIRED` được gửi lại với ID offer mới.
+- **Điều kiện kích hoạt (BE04):**
+  - Booking phải đang ở trạng thái `SEARCHING`.
+  - Không còn offer `PENDING` nào trong thời gian chờ phản hồi (`expiresAt > now`).
+  - Không còn offer `ACCEPTED` nào có thợ rảnh (nếu có thợ đã đồng ý mà vẫn rảnh, hệ thống yêu cầu khách chọn thợ hoặc thợ phải từ chối/bận việc trước khi quét tiếp).
+  - Giới hạn trần quét tối đa: Vòng 1 (5 km) -> Vòng 2 (10 km) -> Vòng 3 (15 km trần tối đa). Khi ở vòng 3 hết ứng viên, hệ thống trả về `400 Bad Request` ("Đã đạt giới hạn quét tối đa 15 km") và giữ booking ở `SEARCHING` để khách có thể chủ động hủy đơn.
+  - Chống gửi lặp cho cùng lượt: Request có thể kèm `expectedRound`.
+- **Hành vi mở rộng & lọc thợ (PostGIS):**
+  - Bán kính lượt mới: Vòng 2 là 10 km (10.000m), Vòng 3 là 15 km (15.000m).
+  - Lọc thợ theo `min(bán kính lượt, bán kính phục vụ thợ)` sử dụng PostGIS `ST_DWithin` và `ST_Distance`.
+  - Loại trừ thợ đã `DECLINED` trên cùng booking.
+  - Thợ từng `EXPIRED` được phép mời lại bằng offer mới (ID mới). Dùng ID offer cũ để phản hồi sẽ bị từ chối `400 Bad Request`.
+  - Ghi nhận lượt tìm lại vào database kể cả khi lượt đó tìm thấy 0 thợ.
+- **Request Body (Tùy chọn):**
+  ```json
+  {
+    "expectedRound": 1
+  }
+  ```
 - **Response:** `200 OK`
   ```json
   {
     "round": 2,
     "radiusKm": 10.0,
-    "candidatesCount": 3,
-    "message": "Đang tìm thợ trong bán kính 10 km"
+    "candidatesCount": 5,
+    "message": "Đang tìm thợ trong bán kính 10.0 km"
   }
   ```
 

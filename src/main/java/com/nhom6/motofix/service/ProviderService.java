@@ -271,25 +271,51 @@ public class ProviderService {
 
         LocalDateTime now = LocalDateTime.now();
 
-        return bookingOfferRepository.findByProvider_IdAndStatus(providerId, OfferStatus.PENDING)
+        // Đọc cả offer PENDING còn hạn và các offer ACCEPTED đang chờ khách chọn trên đơn SEARCHING
+        return bookingOfferRepository.findIncomingOffersForProvider(providerId, now, BookingStatus.SEARCHING)
                 .stream()
-                .filter(o -> o.getExpiresAt().isAfter(now))
                 .sorted(Comparator.comparing(BookingOffer::getCreatedAt).reversed())
                 .map(this::toResponse)
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public IncomingOfferResponse getOfferDetails(UUID offerId, User user) {
+        UUID providerId = providerProfileRepository.findIdByUserId(user.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Provider profile not found"));
+
+        BookingOffer offer = bookingOfferRepository.findByIdAndProvider_Id(offerId, providerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Offer not exists: " + offerId));
+
+        return toResponse(offer);
+    }
+
     private IncomingOfferResponse toResponse(BookingOffer o) {
         Booking b = o.getBooking();
+        List<com.nhom6.motofix.dto.respond.UploadMediaResponse> mediaResponses = b.getMedia() != null ?
+                b.getMedia().stream()
+                        .map(m -> new com.nhom6.motofix.dto.respond.UploadMediaResponse(m.getUrl(), m.getType()))
+                        .toList() : null;
+
         return new IncomingOfferResponse(
                 o.getId(),
                 b.getId(),
+                o.getStatus(),
                 b.getProblemDescription(),
+                b.getAddress(),
                 b.getLatitude(),
                 b.getLongitude(),
+                b.getVehicleBrand(),
+                b.getVehicleModel(),
+                b.getVehicleLicensePlate(),
+                mediaResponses,
                 o.getDistanceM(),
                 o.getCreatedAt(),
-                o.getExpiresAt()
+                o.getExpiresAt(),
+                o.getEstimatedMin(),
+                o.getEstimatedMax(),
+                o.getEstimatedArrivalMinutes(),
+                o.getNote()
         );
     }
 

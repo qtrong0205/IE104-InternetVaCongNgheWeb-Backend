@@ -25,6 +25,7 @@ public interface BookingMapper {
     @Mapping(target = "quotes", ignore = true)
     @Mapping(target = "media", ignore = true)
     @Mapping(target = "paymentMethod", ignore = true)
+    @Mapping(target = "searchRound", ignore = true)
     Booking toBooking(CreateBookingRequest request);
 
     @Mapping(target = "customerId", source = "customer.id")

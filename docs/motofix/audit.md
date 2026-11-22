@@ -89,13 +89,13 @@ Kết quả:
 | **Khách: Tạo yêu cầu cứu hộ** | Nhóm 04, TC-04-06..12; `BookingManagementWorkflowTests` | `POST /api/bookings` | `BookingController:createBooking` | [ĐẠT / TESTED] | Lưu snapshot xe (`brand`, `model`, `plate`) và `address` đã xác nhận. Khóa `PESSIMISTIC_WRITE` trên User chống 2 tab mở 2 đơn đồng thời. Quét và phát offer trong 5 km. | **BE03 (Xong)** |
 | **Khách/Thợ: Đọc đơn đang active** | Nhóm 04, 06, 10; V6 `activeBooking`; `BookingManagementWorkflowTests` | `GET /api/bookings/active` | `BookingController:getActiveBooking` | [ĐẠT / TESTED] | Trả về chi tiết đơn đang mở (`SEARCHING`..`WAITING_PAYMENT`) cho Khách hoặc Thợ để khôi phục bước giao diện sau F5. Trả `204 No Content` khi không có đơn. | **BE03 (Xong)** |
 | **Khách: Theo dõi chi tiết 1 đơn** | Nhóm 06, TC-06-01..05, 08; `BookingManagementWorkflowTests` | `GET /api/bookings/{id}` | `BookingController:getBookingById` | [ĐẠT / TESTED] | Trả toàn bộ thông tin đơn, địa chỉ, snapshot xe. Phân quyền chặt chẽ: chỉ chủ đơn, thợ được phân công hoặc Admin được xem; người lạ bị chặn `403 Forbidden`. | **BE03 (Xong)** |
-| **Thợ: Xem danh sách offer chờ** | Nhóm 05, TC-05-01..05 | `GET /api/providers/incoming-offers` | `ProviderController:getIncomingOffers` | Có mã lọc offer PENDING | Chỉ trả offer `PENDING` còn hạn; V6 yêu cầu xem cả offer đã đồng ý đang chờ khách chọn (`ACCEPTED`). | **BE04** |
-| **Thợ: Xem chi tiết 1 offer** | Nhóm 05, TC-05-06..08 | `GET /api/providers/incoming-offers/{offerId}` | *Chưa có mapping* | Không tìm thấy trong controller | **Thiếu hoàn toàn**. Thợ bấm xem chi tiết sự cố, ảnh/video trước khi quyết định nhận/từ chối. | **BE04** |
-| **Thợ: Đồng ý offer** | Nhóm 05, TC-05-09..14 | `POST /api/bookings/{offerId}/offer/accept` | `BookingController:acceptOffer` | Có mã ghi nhận estimated_*, note | Chưa kiểm tra thợ có đang bận đơn khác không; chưa có test riêng cho endpoint này (mới test gián tiếp qua flow). | **BE04** |
-| **Thợ: Từ chối offer** | Nhóm 05, TC-05-15..17 | `POST /api/bookings/{offerId}/offer/reject` | `BookingController:rejectOffer` | Có mã đổi trạng thái DECLINED | Có mã trong controller/service nhưng thiếu test case độc lập. | **BE04** |
-| **Khách: Xem danh sách offer đã nhận** | Nhóm 05, TC-05-18..21 | `GET /api/bookings/{id}/offers` | `BookingController:getOffers` | Có mã lấy offer ACCEPTED | Có mã nhưng chưa có bộ test kiểm tra phân quyền khách của đơn. | **BE04** |
-| **Khách: Chọn thợ** | Nhóm 05, TC-05-22..28 | `POST /api/bookings/{id}/offers/{offerId}/select` | `BookingController:selectOffer` | Có mã gán provider, đổi status | **Lệch & Thiếu:** Mã đặt status là `PROVIDER_SELECTED` (V6 và đặc tả dùng `SELECTED_PROVIDER`); thiếu cơ chế khóa loại trừ (pessimistic lock) chống 2 khách chọn cùng 1 thợ đồng thời. | **BE04** |
-| **Khách: Yêu cầu quét tìm lại** | Nhóm 05 (`04-tim-lai.md`), Nhóm 11 Quyết định 03 | `POST /api/bookings/{id}/search-rounds` *(đề xuất)* | *Chưa có mapping* | Chưa có trong source | **Thiếu hoàn toàn**. Cần thực thi 3 mốc quét (5 → 10 → 15 km), loại thợ `DECLINED`, mời lại thợ `EXPIRED`, chống bấm lặp cùng lượt. | **BE04** |
+| **Thợ: Xem danh sách offer chờ** | Nhóm 05, TC-05-01..05; `OfferAndSearchWorkflowTests` | `GET /api/providers/incoming-offers` | `ProviderController:getIncomingOffers` | [ĐẠT / TESTED] | Trả cả offer `PENDING` còn hạn và offer `ACCEPTED` đang đợi khách chọn trên booking `SEARCHING`. Đầy đủ xe, sự cố, media, địa chỉ, khoảng cách, thông tin báo giá. | **BE04 (Xong)** |
+| **Thợ: Xem chi tiết 1 offer** | Nhóm 05, TC-05-06..08; `OfferAndSearchWorkflowTests` | `GET /api/providers/incoming-offers/{offerId}` | `ProviderController:getOfferDetails` | [ĐẠT / TESTED] | Endpoint xem chi tiết offer cho thợ phụ trách: xe, sự cố, media, địa chỉ, khoảng cách PostGIS. Chặn người lạ với `403 Forbidden`. | **BE04 (Xong)** |
+| **Thợ: Đồng ý offer** | Nhóm 05, TC-05-09..14; `OfferAndSearchWorkflowTests` | `POST /api/bookings/{offerId}/offer/accept` | `BookingController:acceptOffer` | [ĐẠT / TESTED] | Chuyển `ACCEPTED`. Kiểm tra thợ APPROVED, isActive, không ở vai CUSTOMER, không bận việc active. Ràng buộc: giá > 0, max >= min, ETA nguyên dương. Từ chối ID offer cũ `400 Bad Request`. | **BE04 (Xong)** |
+| **Thợ: Từ chối offer** | Nhóm 05, TC-05-15..17; `OfferAndSearchWorkflowTests` | `POST /api/bookings/{offerId}/offer/reject` | `BookingController:rejectOffer` | [ĐẠT / TESTED] | Chuyển `DECLINED`. Thợ từng từ chối bị loại khỏi toàn bộ các lượt quét mở rộng sau của booking. | **BE04 (Xong)** |
+| **Khách: Xem danh sách offer đã nhận** | Nhóm 05, TC-05-18..21; `OfferAndSearchWorkflowTests` | `GET /api/bookings/{id}/offers` | `BookingController:getOffers` | [ĐẠT / TESTED] | Trả danh sách các thợ đã `ACCEPTED` kèm giá min-max, ETA, note, thông tin tiệm, điểm đánh giá. Phân quyền chỉ chủ đơn được xem. | **BE04 (Xong)** |
+| **Khách: Chọn thợ** | Nhóm 05, TC-05-22..28; `OfferAndSearchWorkflowTests` | `POST /api/bookings/{id}/offers/{offerId}/select` | `BookingController:selectOffer` | [ĐẠT / TESTED] | Khóa bi quan `Booking` và `ProviderProfile`. Hai khách chọn cùng thợ: người đầu thắng, người sau nhận `409 Conflict`. Chuyển đơn sang `SELECTED_PROVIDER`, tự động expire các offer còn lại của đơn và các offer mở của thợ trên đơn khác. | **BE04 (Xong)** |
+| **Khách: Yêu cầu quét tìm lại** | Nhóm 05 (`04-tim-lai.md`), Nhóm 11 Quyết định 03; `OfferAndSearchWorkflowTests` | `POST /api/bookings/{id}/search-rounds` | `BookingController:triggerSearchRound` | [ĐẠT / TESTED] | Quét tìm lại theo 3 mốc (5 → 10 → 15 km). Chỉ mở khi hết hạn PENDING và không còn ACCEPTED có thợ rảnh. Loại trừ thợ DECLINED, mời lại thợ EXPIRED bằng ID mới. Chống gửi lặp cùng lượt. Tới 15 km giữ SEARCHING cho khách hủy. | **BE04 (Xong)** |
 | **Thợ: Bắt đầu di chuyển** | Nhóm 06, TC-06-06..09; `BookingWorkflowTests:testEnRoute_*` | `PATCH /api/bookings/{id}/en-route` | `BookingController:confirmEnRoute` | Đã test 3 ca (thành công, sai thợ, sai status) | Chuyển booking sang `PROVIDER_EN_ROUTE`. Hoạt động chuẩn. | — |
 | **Thợ: Đã đến nơi khám xe** | Nhóm 06, TC-06-10..13; `BookingWorkflowTests:testArrived_*` | `PATCH /api/bookings/{id}/arrived` | `BookingController:confirmArrived` | Đã test 3 ca | Chuyển booking sang `INSPECTING`. Hoạt động chuẩn. | — |
 | **Khách/Thợ: Hủy đơn** | Nhóm 06, TC-06-14..22; `QuoteNegotiationWorkflowTests:testCancelBooking_*` | `POST /api/bookings/{id}/cancel` | `BookingController:cancelBooking` | Đã test 7 ca toàn diện ma trận quyền | Kiểm tra chuẩn: khách chỉ được hủy khi `IN_PROGRESS` có quote `PENDING`; thợ được hủy; không được hủy khi `WAITING_PAYMENT`.. | — |
@@ -254,11 +254,17 @@ BE00 (Audit & Baseline) -> BE01 (Tài khoản & Phân quyền) -> BE02 (Hồ sơ
   - Kiểm soát dung lượng upload: ảnh ≤ 5 MiB, video ≤ 50 MiB, tối đa 10 tệp/lần.
   - Bổ sung API đọc đơn active: `GET /api/bookings/active` phục vụ khôi phục giao diện sau F5 (trả `204 No Content` khi không có đơn mở).
   - Bổ sung API xem chi tiết đơn: `GET /api/bookings/{id}` với phân quyền chặt chẽ (chỉ chủ đơn, thợ được giao, Admin; người lạ bị chặn `403 Forbidden`).
-- **BE04 · Phân phối offer, Chọn thợ & Cơ chế tìm lại:**
-  - Đổi tên trạng thái chọn thợ thành `SELECTED_PROVIDER` (chuẩn hóa tương thích ngược).
-  - Triển khai API tìm lại đa lượt: `POST /api/bookings/{id}/search-rounds`.
-  - Bổ sung API xem chi tiết offer cho thợ: `GET /api/providers/incoming-offers/{offerId}`.
-  - Khóa chọn thợ chống tranh chấp (pessimistic lock thợ).
+- **BE04 · Phân phối offer, Chọn thợ & Cơ chế tìm lại (ĐÃ HOÀN THÀNH):**
+  - Lọc thợ nhận offer theo: `min(bán kính lượt, bán kính phục vụ thợ)`, đúng vai (`current_role` là PROVIDER/null), đã duyệt (`APPROVED`), online (`is_active = true`), rảnh (không bận đơn active). Sử dụng PostGIS `(lng, lat)` với SRID 4326.
+  - Phản hồi offer (`accept`/`reject`): Giá dương (`estimatedMin > 0`, `estimatedMax > 0`), `estimatedMax >= estimatedMin`, `estimatedArrivalMinutes` nguyên dương (> 0).
+  - TTL chỉ áp dụng `PENDING`: Offer `ACCEPTED` đúng hạn vẫn chọn được sau `expires_at` nếu đơn còn `SEARCHING` và thợ rảnh.
+  - Ghi nhận lượt quét kể cả khi 0 offer.
+  - Tìm lại trên cùng booking (`POST /api/bookings/{id}/search-rounds`): Vòng 1 (5 km) -> Vòng 2 (10 km) -> Vòng 3 (15 km trần tối đa). Chỉ mở khi không còn ứng viên khả dụng (hết hạn PENDING và không còn ACCEPTED có thợ rảnh). Chống gửi lặp cùng lượt.
+  - Thợ từng `DECLINED` bị loại khỏi mọi lượt sau của cùng booking; thợ từng `EXPIRED` có thể được mời lại bằng offer mới (ID mới). Dùng ID offer cũ để phản hồi sẽ bị từ chối `400 Bad Request`.
+  - Tới 15 km hết ứng viên: Giữ đơn `SEARCHING` cho khách hủy, không tự hủy hoặc quét tiếp.
+  - Chọn thợ (`selectOffer`): Nguyên tử hóa booking và năng lực nhận việc của thợ bằng khóa bi quan (`PESSIMISTIC_WRITE` trên `ProviderProfile` và `Booking`). Hai khách chọn cùng thợ thì người đầu tiên thắng, người sau nhận 409 Conflict ("Thợ vừa nhận đơn khác"). Offer còn mở của thợ trên các booking khác tự động chuyển `EXPIRED`.
+  - Hỗ trợ trạng thái đã chọn thợ của dữ liệu cũ (`SELECTED_PROVIDER` và `PROVIDER_SELECTED`).
+  - Bổ sung API xem chi tiết offer cho thợ (`GET /api/providers/incoming-offers/{offerId}`) và nâng cấp inbox chờ chọn (`GET /api/providers/incoming-offers`) gồm cả PENDING và ACCEPTED.
 - **BE05 · Báo giá, Hoàn tất thanh toán, Doanh thu & Đánh giá 7 ngày:**
   - Bổ sung kiểm tra hạn đánh giá 168 giờ trong `POST /api/bookings/{id}/review`.
   - Bổ sung API xem đánh giá thợ: `GET /api/providers/{providerId}/reviews`.
@@ -348,3 +354,48 @@ BE00 (Audit & Baseline) -> BE01 (Tài khoản & Phân quyền) -> BE02 (Hồ sơ
     *Giải pháp:* Dùng khóa bi quan hàng User `userRepository.findByIdWithLock(userId)` ở đầu phương thức `createBooking`. Giao dịch thứ hai phải chờ giao dịch thứ nhất hoàn tất và thấy đơn vừa tạo, từ đó từ chối `409 Conflict`.
   - *Trở ngại 2:* `SupabaseStorageService` ném `IllegalArgumentException` khi file vượt kích thước hoặc sai định dạng nhưng trước đó chưa có `@ExceptionHandler` tương ứng, dẫn tới mã lỗi mặc định `500 Internal Server Error`.
     *Giải pháp:* Thêm `@ExceptionHandler(IllegalArgumentException.class)` và `MaxUploadSizeExceededException` vào `GlobalExceptionHandler` trả về chuẩn `400 Bad Request`.
+
+---
+
+## 10. Biên bản bàn giao đợt BE04 · Offer, tìm lại 5/10/15 km và chọn thợ
+
+- **Thời điểm nghiệm thu:** 2026-11-22
+- **Trạng thái:** Hoàn tất trọn vẹn mọi yêu cầu của BE04.
+- **Kết quả kiểm thử:**
+  - `OfferAndSearchWorkflowTests`: **10/10 test cases PASS (100%)**.
+  - Toàn bộ test suite repository: **189/189 test cases PASS (100% không suy thoái)**.
+  - Lệnh kiểm tra thực tế:
+    - `.\mvnw.cmd test -Dtest=OfferAndSearchWorkflowTests`
+    - `.\mvnw.cmd test`
+- **Các ca kiểm thử đã xác thực trong BE04 (`OfferAndSearchWorkflowTests`):**
+  1. `testAcceptOffer_PositiveValuesAndArrivalMinutes` (05-09): Xác thực báo giá dương (`estimatedMin > 0`, `estimatedMax > 0`), `estimatedMax >= estimatedMin`, `estimatedArrivalMinutes > 0`. Nhập số âm hoặc max < min bị từ chối `400 Bad Request`.
+  2. `testLoadRespondableOffer_ChecksRoleAndActiveAndApproved` (05-10, 05-11): Thợ chưa duyệt, đang offline, hoặc đang ở vai `CUSTOMER` đều bị từ chối phản hồi offer (`400 Bad Request` / `403 Forbidden`).
+  3. `testSelectOffer_AcceptedAfterExpiresAt_Success` (05-12): TTL chỉ áp dụng cho `PENDING`. Offer `ACCEPTED` hợp lệ trước khi hết hạn vẫn có thể được khách chọn thành công sau mốc `expires_at` miễn là đơn còn `SEARCHING` và thợ rảnh.
+  4. `testConcurrentSelectSameProvider_OnlyOneWins_OtherOffersExpired` (05-27, 05-28): Hai khách chọn cùng một thợ: Khách đầu tiên thắng (`SELECTED_PROVIDER`), khách thứ hai bị chặn và nhận `409 Conflict` ("Thợ vừa nhận đơn khác, vui lòng chọn thợ khác"). Offer còn mở của thợ trên đơn khách thứ hai tự động chuyển `EXPIRED`.
+  5. `testSelectOffer_ProviderBecomesInactive_ReturnsConflict`: Khách bấm chọn thợ nhưng thợ vừa tắt nhận việc hoặc đăng xuất -> trả về `409 Conflict` ("Thợ đã tắt nhận việc hoặc đã đăng xuất, vui lòng chọn thợ khác").
+  6. `testSearchRounds_ProgressionAndLimits` (05-13, 05-17): Quét tìm lại đa lượt: Vòng 1 (5 km) -> Vòng 2 (10 km) -> Vòng 3 (15 km trần tối đa). Vượt quá 15 km bị từ chối `400 Bad Request` và đơn vẫn giữ `SEARCHING` để khách chủ động hủy đơn. Ghi nhận lượt quét vào database kể cả khi tìm thấy 0 thợ.
+  7. `testSearchRound_DeclinedExcluded_ExpiredReinvited_OldIdRejected` (05-13, 05-14): Thợ từng `DECLINED` bị loại khỏi mọi vòng tìm lại sau của cùng booking; thợ từng `EXPIRED` được mời lại bằng offer mới (ID mới). Thợ dùng ID offer cũ phản hồi bị từ chối `400 Bad Request`.
+  8. `testSearchRound_CancelledBooking_CannotTrigger` (05-18): Booking đã hủy (`CANCELLED`) không được kích hoạt tìm lại (`409 Conflict`).
+  9. `testSearchRound_DuplicateTrigger_Blocked`: Chống gửi lặp cho cùng một lượt (`expectedRound` không khớp vòng hiện tại trả `400 Bad Request`).
+  10. `testProviderInboxAndDetails`: Kiểm tra inbox chờ chọn (`GET /api/providers/incoming-offers`) đọc cả `PENDING` còn hạn và `ACCEPTED` đang đợi chọn; kiểm tra xem chi tiết offer (`GET /api/providers/incoming-offers/{offerId}`) phân quyền đúng thợ.
+- **Tập tin đã thay đổi & tạo mới:**
+  - `src/main/java/com/nhom6/motofix/entity/Booking.java`: Thêm cột `@Column(name = "search_round") private Integer searchRound = 1;`.
+  - `src/main/java/com/nhom6/motofix/dto/request/SearchRoundRequest.java` *(Mới)*: Request DTO `record SearchRoundRequest(Integer expectedRound)`.
+  - `src/main/java/com/nhom6/motofix/dto/respond/SearchRoundResponse.java` *(Mới)*: Response DTO `record SearchRoundResponse(Integer round, Double radiusKm, Integer candidatesCount, String message)`.
+  - `src/main/java/com/nhom6/motofix/dto/respond/BookingResponse.java`: Bổ sung `Integer searchRound` kèm overloaded constructor tương thích ngược.
+  - `src/main/java/com/nhom6/motofix/dto/respond/IncomingOfferResponse.java`: Nâng cấp đầy đủ trường sự cố, ảnh/video, địa chỉ, khoảng cách, thông tin báo giá đã gửi.
+  - `src/main/java/com/nhom6/motofix/repository/ProviderProfileRepository.java`: Thêm native PostGIS query `findNearbyEligibleProviders` với điều kiện lọc toàn diện: `APPROVED`, `is_active=true`, `current_role=PROVIDER/null`, không bận đơn active, loại trừ thợ đã `DECLINED`, loại trừ thợ đã có `PENDING`/`ACCEPTED`.
+  - `src/main/java/com/nhom6/motofix/repository/BookingOfferRepository.java`: Bổ sung `hasActivePendingOffers`, `findAcceptedOffersWithProvider`, `findIncomingOffersForProvider`.
+  - `src/main/java/com/nhom6/motofix/service/BookingService.java`: Triển khai `triggerSearchRound`, nâng cấp `createBooking` quét vòng 1, nguyên tử hóa `selectOffer` với pessimistic lock trên `ProviderProfile` và `Booking`.
+  - `src/main/java/com/nhom6/motofix/service/OfferService.java`: Kiểm tra giá dương, ETA nguyên dương, trạng thái khả dụng của thợ trong `loadRespondableOffer`.
+  - `src/main/java/com/nhom6/motofix/service/ProviderService.java`: Bổ sung `getOfferDetails` và nâng cấp `getIncomingOffers`.
+  - `src/main/java/com/nhom6/motofix/controller/BookingController.java`: Thêm endpoint `POST /api/bookings/{id}/search-rounds`.
+  - `src/main/java/com/nhom6/motofix/controller/ProviderController.java`: Thêm endpoint `GET /api/providers/incoming-offers/{offerId}`.
+  - `src/main/java/com/nhom6/motofix/mapper/BookingMapper.java`: Bỏ qua target `searchRound` khi map request tạo đơn.
+  - `src/test/java/com/nhom6/motofix/OfferAndSearchWorkflowTests.java` *(Mới)*: Bộ test 10 ca kiểm thử chuyên sâu cho toàn bộ yêu cầu của đợt BE04.
+- **Trở ngại & Giải pháp:**
+  - *Trở ngại 1:* Khi Customer 1 chọn thợ thành công, offer của thợ trên đơn Customer 2 được hệ thống tự động đổi sang `EXPIRED`. Ban đầu Customer 2 nhận mã `400 Bad Request` ("Only ACCEPTED offers can be selected") thay vì mã `409 Conflict` ("Thợ vừa nhận đơn khác").
+    *Giải pháp:* Trong `selectOffer`, khi `offer.getStatus() != ACCEPTED`, kiểm tra nếu thợ đã nhận đơn cứu hộ khác (`bookingRepository.hasActiveBookings(...)`), ném ngay `ConflictException` (409 Conflict) với thông điệp rõ ràng cho khách hàng.
+  - *Trở ngại 2:* Khi kích hoạt vòng 2 tìm lại mở rộng lên 10 km, cơ sở dữ liệu dùng chung trên Supabase có nhiều thợ thử nghiệm ở khoảng cách 0m, khiến mệnh đề `LIMIT 20` cắt bớt thợ ở xa hơn (2.7 km).
+    *Giải pháp:* Cô lập vị trí kiểm thử với tọa độ chuyên biệt để đảm bảo kiểm thử chính xác các nhánh điều kiện loại trừ `DECLINED` và mời lại thợ `EXPIRED`.
+
