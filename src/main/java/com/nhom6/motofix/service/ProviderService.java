@@ -5,6 +5,7 @@ import com.nhom6.motofix.dto.request.ProviderProfileRequest;
 import com.nhom6.motofix.dto.respond.BookingResponse;
 import com.nhom6.motofix.dto.respond.IncomingOfferResponse;
 import com.nhom6.motofix.dto.respond.ProviderProfileResponse;
+import com.nhom6.motofix.dto.respond.PublicProviderProfileResponse;
 import com.nhom6.motofix.dto.respond.ProviderRevenueResponse;
 import com.nhom6.motofix.entity.Booking;
 import com.nhom6.motofix.entity.BookingOffer;
@@ -82,6 +83,7 @@ public class ProviderService {
         // Tạo entity từ request và lưu vào repository
         var providerProfile = providerProfileMapper.toEntity(request);
         providerProfile.setUser(user);
+        providerProfile.setAddress(request.address());
         providerProfile.setApprovalStatus(ApprovalStatus.PENDING);
         providerProfile.setActive(false);
         providerProfile.setRejectionReason(null);
@@ -99,6 +101,18 @@ public class ProviderService {
                 .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ thợ không tồn tại"));
 
         return providerProfileMapper.toResponse(provider);
+    }
+
+    @Transactional(readOnly = true)
+    public PublicProviderProfileResponse getPublicProfile(UUID providerId) {
+        ProviderProfile provider = providerProfileRepository.findById(providerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ thợ không tồn tại"));
+
+        if (provider.getApprovalStatus() != ApprovalStatus.APPROVED) {
+            throw new ResourceNotFoundException("Hồ sơ thợ không tồn tại hoặc chưa được phê duyệt");
+        }
+
+        return providerProfileMapper.toPublicResponse(provider);
     }
 
     @Transactional
@@ -125,6 +139,7 @@ public class ProviderService {
         provider.setBusinessName(request.businessName());
         provider.setIdDocumentUrl(request.idDocumentUrl());
         provider.setBusinessLicenseUrl(request.businessLicenseUrl());
+        provider.setAddress(request.address());
         provider.setBaseLat(request.baseLat());
         provider.setBaseLng(request.baseLng());
         if (request.serviceRadiusKm() != null) {
@@ -162,7 +177,15 @@ public class ProviderService {
             }
             provider.setActive(true);
         } else {
+            // Tắt online: cho phép cả khi đang làm việc.
+            // Hết hạn mọi offer chưa được khách chọn (PENDING / ACCEPTED trên booking SEARCHING)
             provider.setActive(false);
+            bookingOfferRepository.expireOffersForProvider(
+                    provider.getId(),
+                    OfferStatus.EXPIRED,
+                    List.of(OfferStatus.PENDING, OfferStatus.ACCEPTED),
+                    BookingStatus.SEARCHING
+            );
         }
 
         ProviderProfile saved = providerProfileRepository.save(provider);
@@ -181,7 +204,7 @@ public class ProviderService {
     @Transactional
     public ProviderProfileResponse approveProvider(UUID providerId) {
         ProviderProfile provider = providerProfileRepository
-                .findById(providerId)
+                .findByIdWithLock(providerId)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Provider not found")
                 );
@@ -194,7 +217,8 @@ public class ProviderService {
 
         provider.setApprovalStatus(ApprovalStatus.APPROVED);
         provider.setRejectionReason(null);
-        provider.setActive(true);
+        // Sau khi admin duyệt: cấp quyền thợ và giữ offline đến khi thợ tự bật
+        provider.setActive(false);
 
         User u = provider.getUser();
         if (u != null && roleRepository != null && userRepository != null) {
@@ -216,8 +240,12 @@ public class ProviderService {
             UUID providerId,
             String reason
     ) {
+        if (reason == null || reason.trim().isBlank()) {
+            throw new BadRequestException("Rejection reason is required");
+        }
+
         ProviderProfile provider = providerProfileRepository
-                .findById(providerId)
+                .findByIdWithLock(providerId)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Provider not found")
                 );
@@ -229,7 +257,7 @@ public class ProviderService {
         }
 
         provider.setApprovalStatus(ApprovalStatus.REJECTED);
-        provider.setRejectionReason(reason);
+        provider.setRejectionReason(reason.trim());
         provider.setActive(false);
 
         ProviderProfile savedProvider = providerProfileRepository.save(provider);

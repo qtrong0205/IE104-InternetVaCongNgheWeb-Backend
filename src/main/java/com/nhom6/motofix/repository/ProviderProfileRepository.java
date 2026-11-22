@@ -32,14 +32,25 @@ public interface ProviderProfileRepository extends JpaRepository<ProviderProfile
     @Query("SELECT p FROM ProviderProfile p WHERE p.user.id = :userId")
     Optional<ProviderProfile> findByUserIdWithLock(@Param("userId") UUID userId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM ProviderProfile p WHERE p.id = :id")
+    Optional<ProviderProfile> findByIdWithLock(@Param("id") UUID id);
+
     @Query(value = """
         SELECT p.id AS id,
-               extensions.ST_Distance(p.location, pt.g) AS "distanceM"
+               extensions.ST_Distance(
+                   COALESCE(p.location, extensions.ST_SetSRID(extensions.ST_MakePoint(p.base_lng, p.base_lat), 4326)::extensions.geography),
+                   pt.g
+               ) AS "distanceM"
         FROM provider_profile p,
              (SELECT extensions.ST_SetSRID(extensions.ST_MakePoint(:lng, :lat), 4326)::extensions.geography AS g) pt
         WHERE p.is_active = TRUE
           AND p.approval_status = 'APPROVED'
-          AND extensions.ST_DWithin(p.location, pt.g, :radiusM)
+          AND extensions.ST_DWithin(
+              COALESCE(p.location, extensions.ST_SetSRID(extensions.ST_MakePoint(p.base_lng, p.base_lat), 4326)::extensions.geography),
+              pt.g,
+              LEAST(:radiusM, COALESCE(p.service_radius_km * 1000.0, :radiusM))
+          )
         ORDER BY "distanceM"
         LIMIT :limit
         """, nativeQuery = true)

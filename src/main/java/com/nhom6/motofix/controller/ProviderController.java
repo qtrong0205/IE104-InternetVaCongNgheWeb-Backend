@@ -5,6 +5,7 @@ import com.nhom6.motofix.dto.request.ProviderProfileRequest;
 import com.nhom6.motofix.dto.respond.BookingResponse;
 import com.nhom6.motofix.dto.respond.IncomingOfferResponse;
 import com.nhom6.motofix.dto.respond.ProviderProfileResponse;
+import com.nhom6.motofix.dto.respond.PublicProviderProfileResponse;
 import com.nhom6.motofix.dto.respond.ProviderRevenueResponse;
 import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.enums.BookingStatus;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/providers")
@@ -46,6 +48,13 @@ public class ProviderController {
             @AuthenticationPrincipal User user
     ) {
         return ResponseEntity.ok(providerService.getMyProfile(user));
+    }
+
+    @GetMapping("/{providerId}")
+    public ResponseEntity<PublicProviderProfileResponse> getPublicProfile(
+            @PathVariable UUID providerId
+    ) {
+        return ResponseEntity.ok(providerService.getPublicProfile(providerId));
     }
 
     @PutMapping("/me")

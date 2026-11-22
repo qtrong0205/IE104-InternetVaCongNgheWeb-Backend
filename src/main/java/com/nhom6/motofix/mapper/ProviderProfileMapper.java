@@ -2,6 +2,7 @@ package com.nhom6.motofix.mapper;
 
 import com.nhom6.motofix.dto.request.ProviderProfileRequest;
 import com.nhom6.motofix.dto.respond.ProviderProfileResponse;
+import com.nhom6.motofix.dto.respond.PublicProviderProfileResponse;
 import com.nhom6.motofix.entity.ProviderProfile;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -24,4 +25,6 @@ public interface ProviderProfileMapper {
 
     @Mapping(target = "isActive", source = "active")
     ProviderProfileResponse toResponse(ProviderProfile providerProfile);
+
+    PublicProviderProfileResponse toPublicResponse(ProviderProfile providerProfile);
 }

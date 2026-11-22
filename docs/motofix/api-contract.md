@@ -1,6 +1,6 @@
 # MotoFix Backend · Hợp đồng API (API Contract)
 
-> **Phiên bản tài liệu:** 1.1.0 (Hoàn thành đợt BE01 · Tài khoản, vai hiện tại và phiên)  
+> **Phiên bản tài liệu:** 1.2.0 (Hoàn thành đợt BE02 · Hồ sơ thợ, duyệt và địa chỉ cơ sở)  
 > **Phiên bản mã nguồn cơ sở (Git commit):** `9509449983f02cf2215cfd8b3b867f0a6f924359` (Branch: `main`)  
 > **Hệ thống:** Java 17 / Spring Boot 4.1.1 / PostgreSQL 17.6 PostGIS / Supabase Storage  
 
@@ -289,13 +289,14 @@
     "businessName": "Sửa xe Khang",
     "idDocumentUrl": "https://storage.../cccd.jpg",
     "businessLicenseUrl": "https://storage.../gpkd.jpg",
+    "address": "123 Nguyễn Trãi, Phường Bến Thành, Quận 1, TP.HCM",
     "baseLat": 10.776889,
     "baseLng": 106.695380,
     "serviceRadiusKm": 5.0
   }
   ```
-- **Response:** `201 CREATED` (Hồ sơ ở trạng thái `PENDING`, `isActive = false`).
-- **Hành vi bổ sung (BE02):** Bổ sung trường `address` (địa chỉ cơ sở bằng chữ).
+- **Response:** `201 CREATED` (Hồ sơ ở trạng thái `PENDING`, `isActive = false`, chứa đầy đủ `address`, `baseLat`, `baseLng`).
+- **Hành vi (BE02):** Bổ sung trường `address` (địa chỉ cơ sở bằng chữ). Dữ liệu cũ thiếu địa chỉ (`address = null`) vẫn đọc và ánh xạ bình thường.
 
 ### 4.2. Xem hồ sơ thợ của mình `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `GET /api/providers/me`
@@ -305,8 +306,11 @@
   {
     "id": "7fa85f64-5717-4562-b3fc-2c963f66af77",
     "businessName": "Sửa xe Khang",
+    "idDocumentUrl": "https://storage.../cccd.jpg",
+    "businessLicenseUrl": "https://storage.../gpkd.jpg",
+    "address": "123 Nguyễn Trãi, Phường Bến Thành, Quận 1, TP.HCM",
     "approvalStatus": "APPROVED",
-    "isActive": true,
+    "isActive": false,
     "ratingAvg": 4.9,
     "ratingCount": 128,
     "baseLat": 10.776889,
@@ -318,12 +322,25 @@
 
 ### 4.3. Sửa / Nộp lại hồ sơ thợ `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `PUT /api/providers/me`
-- **Role:** Thợ đang offline (`isActive = false`) và không có booking active.
-- **Quy tắc:** Đưa trạng thái về `PENDING`, xóa lý do từ chối cũ, giữ `isActive = false`.
+- **Role:** Thợ đang offline (`isActive = false`) và không có booking active (`SEARCHING` .. `WAITING_PAYMENT`).
+- **Request Body:**
+  ```json
+  {
+    "businessName": "Sửa xe Khang Đạt",
+    "idDocumentUrl": "https://storage.../cccd_new.jpg",
+    "businessLicenseUrl": "https://storage.../gpkd_new.jpg",
+    "address": "456 Lê Duẩn, Bến Nghé, Quận 1, TP.HCM",
+    "baseLat": 10.780000,
+    "baseLng": 106.700000,
+    "serviceRadiusKm": 7.0
+  }
+  ```
+- **Quy tắc:** Đưa trạng thái về `PENDING`, xóa lý do từ chối cũ, giữ `isActive = false`. Cập nhật tọa độ cơ sở `base_lat`/`base_lng` và địa chỉ `address`.
 - **Response:** `200 OK`
-- **Lỗi tiêu biểu:** `400 Bad Request` khi đang online hoặc đang có đơn cứu hộ chưa kết thúc.
+- **Lỗi tiêu biểu:** `400 Bad Request` khi thợ đang online hoặc đang có đơn cứu hộ chưa kết thúc (giữ nguyên địa chỉ và trạng thái cũ).
+- **Lưu ý hồ sơ cá nhân:** Việc sửa hồ sơ người dùng thông thường (`PUT /api/users/me`) độc lập hoàn toàn, không ảnh hưởng đến trạng thái phê duyệt của hồ sơ thợ.
 
-### 4.4. Bật / Tắt nhận đơn `[ĐÃ KIỂM THỬ - CẦN BỔ SUNG EXPIRE]`
+### 4.4. Bật / Tắt nhận đơn `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `PATCH /api/providers/me/active` (hoặc alias `/api/providers/me/online`)
 - **Role:** Thợ có hồ sơ `APPROVED`
 - **Request Body:**
@@ -334,18 +351,23 @@
   ```
 - **Response:** `200 OK`
 - **Lỗi tiêu biểu:** `400 Bad Request` nếu hồ sơ còn `PENDING` hoặc `REJECTED`.
-- **Hành vi bổ sung (BE02):** Khi tắt nhận đơn (`isActive = false`), tự động chuyển toàn bộ offer `PENDING`/`ACCEPTED` của thợ trên các đơn `SEARCHING` sang `EXPIRED`.
+- **Hành vi (BE02):**
+  - Khi tắt nhận đơn (`isActive = false`): tự động quét và chuyển toàn bộ offer `PENDING`/`ACCEPTED` của thợ trên các đơn `SEARCHING` sang `EXPIRED`.
+  - Cho phép tắt online khi đang thực hiện đơn đã giao (`IN_PROGRESS`), giữ nguyên đơn hiện tại để thợ hoàn tất công việc nhưng không nhận thêm đơn mới.
 
 ### 4.5. Admin: Xem danh sách chờ duyệt `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `GET /api/admin/providers/pending?page=0&size=10`
 - **Role:** `ADMIN`
-- **Response:** `200 OK` (Phân trang danh sách `ProviderProfileResponse`).
+- **Response:** `200 OK` (Phân trang danh sách `ProviderProfileResponse` bao gồm `address`).
 
-### 4.6. Admin: Duyệt thợ `[LỆCH - CẦN ĐIỀU CHỈNH]`
+### 4.6. Admin: Duyệt thợ `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `PATCH /api/admin/providers/{providerId}/approve`
 - **Role:** `ADMIN`
 - **Điều kiện:** Hồ sơ thợ đang ở trạng thái `PENDING`.
-- **Hành vi chuẩn hóa (BE02):** Cấp role `PROVIDER`, chuyển `approvalStatus = APPROVED`, nhưng **phải giữ `isActive = false`** (trong source hiện đang tự bật `isActive = true`).
+- **Hành vi (BE02):**
+  - Cấp role `PROVIDER`, chuyển `approvalStatus = APPROVED`.
+  - **Giữ `isActive = false` (offline)** sau khi duyệt: thợ phải tự chủ động đăng nhập và bật nhận việc khi sẵn sàng.
+  - Sử dụng khóa bi quan (`PESSIMISTIC_WRITE`) chống xung đột xử lý đồng thời giữa hai Admin (Admin đầu tiên duyệt/từ chối thành công, Admin thứ hai gặp `400 Bad Request` do trạng thái không còn là `PENDING`).
 
 ### 4.7. Admin: Từ chối thợ `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `PATCH /api/admin/providers/{providerId}/reject`
@@ -357,22 +379,28 @@
   }
   ```
 - **Response:** `200 OK` (Chuyển `approvalStatus = REJECTED`, lưu lý do, giữ `isActive = false`).
+- **Ràng buộc:** Lý do từ chối không được để trống (`null`, rỗng hoặc chỉ toàn khoảng trắng) → trả về `400 Bad Request`.
+- **Đồng thời:** Áp dụng khóa bi quan (`PESSIMISTIC_WRITE`) tương tự API duyệt.
 
-### 4.8. Khách xem hồ sơ thợ công khai `[ĐỀ XUẤT / CẦN BỔ SUNG]`
+### 4.8. Khách xem hồ sơ thợ công khai `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `GET /api/providers/{providerId}`
-- **Role:** `CUSTOMER` / Đã xác thực
+- **Role:** Người dùng đã xác thực (Mọi role)
 - **Response:** `200 OK`
   ```json
   {
     "id": "7fa85f64-5717-4562-b3fc-2c963f66af77",
     "businessName": "Sửa xe Khang",
-    "address": "35 Võ Văn Tần, Quận 3, TP.HCM",
+    "address": "123 Nguyễn Trãi, Phường Bến Thành, Quận 1, TP.HCM",
+    "baseLat": 10.776889,
+    "baseLng": 106.695380,
+    "serviceRadiusKm": 5.0,
     "ratingAvg": 4.9,
-    "ratingCount": 128,
-    "serviceRadiusKm": 5.0
+    "ratingCount": 128
   }
   ```
-  *(Tuyệt đối không trả `idDocumentUrl` hoặc `businessLicenseUrl` cho khách).*
+- **Bảo mật dữ liệu:** Ẩn hoàn toàn thông tin nhạy cảm: không trả `idDocumentUrl`, `businessLicenseUrl`, `rejectionReason`, `approvalStatus`, `isActive`.
+- **Lỗi tiêu biểu:** `404 Not Found` nếu thợ không tồn tại hoặc chưa được duyệt (`approvalStatus != APPROVED`).
+- **Mã nguồn:** `ProviderController.java:getPublicProfile` → `ProviderService.java:getPublicProfile`.
 
 ---
 

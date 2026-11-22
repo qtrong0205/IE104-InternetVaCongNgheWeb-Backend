@@ -17,6 +17,16 @@ import com.nhom6.motofix.repository.BookingRepository;
 import com.nhom6.motofix.repository.ProviderProfileRepository;
 import com.nhom6.motofix.repository.RoleRepository;
 import com.nhom6.motofix.repository.UserRepository;
+import com.nhom6.motofix.entity.BookingOffer;
+import com.nhom6.motofix.entity.NearbyProviderView;
+import com.nhom6.motofix.enums.OfferStatus;
+import com.nhom6.motofix.repository.BookingOfferRepository;
+import com.nhom6.motofix.service.AuthService;
+import com.nhom6.motofix.service.BookingService;
+import com.nhom6.motofix.service.UserService;
+import com.nhom6.motofix.dto.request.RejectProviderRequest;
+import com.nhom6.motofix.dto.request.UpdateUserProfileRequest;
+import com.nhom6.motofix.dto.request.CreateBookingRequest;
 import com.nhom6.motofix.security.JwtService;
 import com.nhom6.motofix.service.ProviderService;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,6 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -68,6 +79,18 @@ class ProviderProfileWorkflowTests {
 
     @Autowired
     private ProviderService providerService;
+
+    @Autowired
+    private BookingOfferRepository bookingOfferRepository;
+
+    @Autowired
+    private BookingService bookingService;
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private AuthService authService;
 
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
@@ -707,7 +730,7 @@ class ProviderProfileWorkflowTests {
 
         ProviderProfile approvedAgain = providerProfileRepository.findById(providerProfile.getId()).orElseThrow();
         assertEquals(ApprovalStatus.APPROVED, approvedAgain.getApprovalStatus());
-        assertTrue(approvedAgain.isActive());
+        assertFalse(approvedAgain.isActive(), "Sau khi admin duyệt, thợ vẫn giữ offline (is_active = false) cho đến khi tự bật");
 
         // Có thể tắt/bật lại nhận đơn
         mockMvc.perform(patch("/api/providers/me/active")
@@ -723,6 +746,383 @@ class ProviderProfileWorkflowTests {
                         .content(objectMapper.writeValueAsString(new ProviderActiveRequest(true))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isActive").value(true));
+    }
+
+    // =========================================================================
+    // BE02 Test Suite
+    // =========================================================================
+
+    private String createAdminToken() {
+        Role adminRole = roleRepository.findByName("ADMIN").orElseGet(() -> {
+            Role r = new Role();
+            r.setName("ADMIN");
+            return roleRepository.save(r);
+        });
+        User admin = new User();
+        admin.setFullName("Admin Root");
+        admin.setEmail("admin_" + UUID.randomUUID() + "@motofix.vn");
+        admin.setPhone("098" + (System.currentTimeMillis() % 10000000));
+        admin.setPasswordHash(passwordEncoder.encode("Password123@"));
+        admin.setStatus("active");
+        admin.setCurrentRole("ADMIN");
+        admin.getRoles().add(adminRole);
+        admin = userRepository.save(admin);
+        return jwtService.generateToken(admin);
+    }
+
+    @Test
+    @DisplayName("BE02: Ca duyệt sau logout -> Sau duyệt vẫn offline, không nhận offer cho đến khi tự bật")
+    void testApproveAfterLogout_StaysOffline_ReceivesOfferOnlyAfterTurningOnline() throws Exception {
+        // 1. Thợ nộp hồ sơ PENDING
+        User applicant = new User();
+        applicant.setFullName("Thợ Mới Nộp");
+        applicant.setEmail("applicant_" + UUID.randomUUID() + "@motofix.vn");
+        applicant.setPhone("093" + (System.currentTimeMillis() % 10000000));
+        applicant.setPasswordHash(passwordEncoder.encode("Password123@"));
+        applicant.setStatus("active");
+        applicant = userRepository.save(applicant);
+        String applicantToken = jwtService.generateToken(applicant);
+
+        ProviderProfileRequest req = new ProviderProfileRequest(
+                "Tiệm Cứu Hộ Mới",
+                "https://supabase.co/id_new.jpg",
+                null,
+                "123 Lê Lợi, Quận 1, TP.HCM",
+                10.7769f,
+                106.7009f,
+                5.0f
+        );
+
+        mockMvc.perform(post("/api/providers/register")
+                        .header("Authorization", "Bearer " + applicantToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.address").value("123 Lê Lợi, Quận 1, TP.HCM"))
+                .andExpect(jsonPath("$.approvalStatus").value("PENDING"))
+                .andExpect(jsonPath("$.isActive").value(false));
+
+        ProviderProfile profile = providerProfileRepository.findByUserId(applicant.getId()).orElseThrow();
+
+        // 2. Thợ đăng xuất
+        mockMvc.perform(post("/api/auth/logout")
+                        .header("Authorization", "Bearer " + applicantToken))
+                .andExpect(status().isOk());
+
+        // 3. Admin duyệt hồ sơ
+        String adminToken = createAdminToken();
+        mockMvc.perform(patch("/api/admin/providers/" + profile.getId() + "/approve")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.approvalStatus").value("APPROVED"))
+                .andExpect(jsonPath("$.isActive").value(false));
+
+        ProviderProfile approvedProfile = providerProfileRepository.findById(profile.getId()).orElseThrow();
+        assertEquals(ApprovalStatus.APPROVED, approvedProfile.getApprovalStatus());
+        assertFalse(approvedProfile.isActive(), "Sau duyệt admin, hồ sơ thợ phải giữ offline");
+
+        // 4. Khách tạo booking quanh cơ sở thợ -> thợ KHÔNG nhận được offer vì đang offline
+        List<NearbyProviderView> nearbyBeforeOnline = providerProfileRepository.findNearby(10.7769, 106.7009, 5000, 10);
+        boolean containsTho = nearbyBeforeOnline.stream().anyMatch(n -> n.getId().equals(profile.getId()));
+        assertFalse(containsTho, "Thợ chưa bật online không được quét trúng");
+
+        // 5. Thợ đăng nhập lại và tự bật online
+        applicant.setCurrentRole("PROVIDER");
+        userRepository.save(applicant);
+        String newProviderToken = jwtService.generateToken(applicant);
+
+        mockMvc.perform(patch("/api/providers/me/active")
+                        .header("Authorization", "Bearer " + newProviderToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new ProviderActiveRequest(true))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isActive").value(true));
+
+        // 6. Quét lại -> thợ đã online được tìm thấy
+        List<NearbyProviderView> nearbyAfterOnline = providerProfileRepository.findNearby(10.7769, 106.7009, 5000, 10);
+        boolean containsThoAfter = nearbyAfterOnline.stream().anyMatch(n -> n.getId().equals(profile.getId()));
+        assertTrue(containsThoAfter, "Thợ sau khi tự bật online phải được quét trúng");
+    }
+
+    @Test
+    @DisplayName("BE02: Hai admin đồng thời xử lý cùng hồ sơ -> Chỉ 1 quyết định thành công, quyết định sau bị từ chối")
+    void testTwoAdmins_ConcurrentProcessSameProfile_OnlyOneSucceeds() throws Exception {
+        providerProfile.setApprovalStatus(ApprovalStatus.PENDING);
+        providerProfile.setActive(false);
+        providerProfileRepository.save(providerProfile);
+
+        String adminToken = createAdminToken();
+
+        // Admin 1 duyệt thành công
+        mockMvc.perform(patch("/api/admin/providers/" + providerProfile.getId() + "/approve")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.approvalStatus").value("APPROVED"));
+
+        // Admin 2 cố gắng từ chối trên cùng hồ sơ đã duyệt -> 400 Bad Request
+        mockMvc.perform(patch("/api/admin/providers/" + providerProfile.getId() + "/reject")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RejectProviderRequest("Lý do từ chối"))))
+                .andExpect(status().isBadRequest());
+
+        // Trạng thái cuối cùng vẫn là APPROVED
+        ProviderProfile finalProfile = providerProfileRepository.findById(providerProfile.getId()).orElseThrow();
+        assertEquals(ApprovalStatus.APPROVED, finalProfile.getApprovalStatus());
+    }
+
+    @Test
+    @DisplayName("BE02: Admin từ chối với lý do rỗng -> 400 Bad Request, giữ nguyên trạng thái PENDING")
+    void testAdminReject_BlankReason_BadRequest_StatusUnchanged() throws Exception {
+        providerProfile.setApprovalStatus(ApprovalStatus.PENDING);
+        providerProfile.setActive(false);
+        providerProfileRepository.save(providerProfile);
+
+        String adminToken = createAdminToken();
+
+        // Gửi lý do rỗng
+        mockMvc.perform(patch("/api/admin/providers/" + providerProfile.getId() + "/reject")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\": \"   \"}"))
+                .andExpect(status().isBadRequest());
+
+        ProviderProfile reloaded = providerProfileRepository.findById(providerProfile.getId()).orElseThrow();
+        assertEquals(ApprovalStatus.PENDING, reloaded.getApprovalStatus());
+    }
+
+    @Test
+    @DisplayName("BE02: Thợ đang có đơn hàng, đổi địa chỉ cơ sở -> 400 Bad Request, địa chỉ cũ giữ nguyên")
+    void testUpdateFacilityAddress_BlockedWhenActiveBooking_KeepsOldAddress() throws Exception {
+        providerProfile.setApprovalStatus(ApprovalStatus.APPROVED);
+        providerProfile.setActive(false);
+        providerProfile.setAddress("Cơ sở cũ Q1");
+        providerProfile.setBaseLat(10.7769f);
+        providerProfile.setBaseLng(106.7009f);
+        providerProfile = providerProfileRepository.save(providerProfile);
+
+        Booking activeBooking = new Booking();
+        activeBooking.setCustomer(plainCustomer);
+        activeBooking.setProvider(providerProfile);
+        activeBooking.setStatus(BookingStatus.IN_PROGRESS);
+        activeBooking.setProblemDescription("Xe đang sửa");
+        activeBooking.setLatitude(10.7769);
+        activeBooking.setLongitude(106.7009);
+        bookingRepository.save(activeBooking);
+
+        ProviderProfileRequest editReq = new ProviderProfileRequest(
+                "Tiệm Đổi Địa Chỉ",
+                "https://supabase.co/id.jpg",
+                null,
+                "Cơ sở mới Thủ Đức",
+                10.8500f,
+                106.7700f,
+                5.0f
+        );
+
+        mockMvc.perform(put("/api/providers/me")
+                        .header("Authorization", "Bearer " + providerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(editReq)))
+                .andExpect(status().isBadRequest());
+
+        ProviderProfile reloaded = providerProfileRepository.findById(providerProfile.getId()).orElseThrow();
+        assertEquals("Cơ sở cũ Q1", reloaded.getAddress());
+        assertEquals(10.7769f, reloaded.getBaseLat());
+        assertEquals(106.7009f, reloaded.getBaseLng());
+    }
+
+    @Test
+    @DisplayName("BE02: Tắt online trong khi có việc -> Đơn đang làm giữ nguyên, hết hạn các offer chưa chọn")
+    void testTurnOffline_AllowedWhileWorking_KeepsCurrentBooking_ExpiresWaitingOffers() throws Exception {
+        providerProfile.setApprovalStatus(ApprovalStatus.APPROVED);
+        providerProfile.setActive(true);
+        providerProfileRepository.save(providerProfile);
+
+        // 1. Đơn được giao đang thực hiện (INSPECTING)
+        Booking assignedBooking = new Booking();
+        assignedBooking.setCustomer(plainCustomer);
+        assignedBooking.setProvider(providerProfile);
+        assignedBooking.setStatus(BookingStatus.INSPECTING);
+        assignedBooking.setProblemDescription("Khám xe");
+        assignedBooking.setLatitude(10.7769);
+        assignedBooking.setLongitude(106.7009);
+        assignedBooking = bookingRepository.save(assignedBooking);
+
+        // 2. Khách khác có đơn SEARCHING và thợ đã gửi offer ACCEPTED
+        User otherCustomer = new User();
+        otherCustomer.setFullName("Khách Khác");
+        otherCustomer.setEmail("other_cust_" + UUID.randomUUID() + "@motofix.vn");
+        otherCustomer.setPhone("094" + (System.currentTimeMillis() % 10000000));
+        otherCustomer.setPasswordHash(passwordEncoder.encode("Password123@"));
+        otherCustomer.setStatus("active");
+        otherCustomer = userRepository.save(otherCustomer);
+
+        Booking searchingBooking = new Booking();
+        searchingBooking.setCustomer(otherCustomer);
+        searchingBooking.setStatus(BookingStatus.SEARCHING);
+        searchingBooking.setProblemDescription("Chờ thợ");
+        searchingBooking.setLatitude(10.7769);
+        searchingBooking.setLongitude(106.7009);
+        searchingBooking = bookingRepository.save(searchingBooking);
+
+        BookingOffer offer = new BookingOffer();
+        offer.setBooking(searchingBooking);
+        offer.setProvider(providerProfile);
+        offer.setStatus(OfferStatus.ACCEPTED);
+        offer.setExpiresAt(LocalDateTime.now().plusMinutes(10));
+        offer = bookingOfferRepository.save(offer);
+
+        // 3. Thợ tắt online
+        mockMvc.perform(patch("/api/providers/me/active")
+                        .header("Authorization", "Bearer " + providerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new ProviderActiveRequest(false))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isActive").value(false));
+
+        // 4. Đơn đang làm giữ nguyên
+        Booking reloadedAssigned = bookingRepository.findById(assignedBooking.getId()).orElseThrow();
+        assertEquals(BookingStatus.INSPECTING, reloadedAssigned.getStatus());
+
+        // 5. Offer chưa chọn chuyển sang EXPIRED
+        BookingOffer reloadedOffer = bookingOfferRepository.findById(offer.getId()).orElseThrow();
+        assertEquals(OfferStatus.EXPIRED, reloadedOffer.getStatus());
+    }
+
+    @Test
+    @DisplayName("BE02: Điểm không gian sau đổi cơ sở -> Quét đúng cơ sở mới, không trúng ở cơ sở cũ")
+    void testSpatialSearch_AfterChangingFacilityLocation() throws Exception {
+        // Thợ ban đầu ở Q1: 10.7769, 106.7009, bán kính 5km
+        providerProfile.setApprovalStatus(ApprovalStatus.APPROVED);
+        providerProfile.setActive(false);
+        providerProfile.setBaseLat(10.7769f);
+        providerProfile.setBaseLng(106.7009f);
+        providerProfile.setServiceRadiusKm(5.0f);
+        providerProfile.setAddress("Cơ sở Quận 1");
+        providerProfileRepository.save(providerProfile);
+
+        // Thợ offline, hết đơn -> đổi cơ sở sang Thủ Đức (10.8500, 106.7700), cách Q1 khoảng 12km
+        ProviderProfileRequest editReq = new ProviderProfileRequest(
+                "Tiệm Cứu Hộ Thủ Đức",
+                "https://supabase.co/id_doc.jpg",
+                null,
+                "Số 1 Võ Văn Ngân, TP. Thủ Đức",
+                10.8500f,
+                106.7700f,
+                5.0f
+        );
+
+        mockMvc.perform(put("/api/providers/me")
+                        .header("Authorization", "Bearer " + providerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(editReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.address").value("Số 1 Võ Văn Ngân, TP. Thủ Đức"))
+                .andExpect(jsonPath("$.approvalStatus").value("PENDING"))
+                .andExpect(jsonPath("$.isActive").value(false));
+
+        // Admin duyệt lại
+        String adminToken = createAdminToken();
+        mockMvc.perform(patch("/api/admin/providers/" + providerProfile.getId() + "/approve")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk());
+
+        // Thợ bật online
+        mockMvc.perform(patch("/api/providers/me/active")
+                        .header("Authorization", "Bearer " + providerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new ProviderActiveRequest(true))))
+                .andExpect(status().isOk());
+
+        // Quét quanh Thủ Đức (10.8510, 106.7710 - cách 150m) -> Tìm thấy thợ
+        List<NearbyProviderView> nearbyThuDuc = providerProfileRepository.findNearby(10.8510, 106.7710, 5000, 10);
+        assertTrue(nearbyThuDuc.stream().anyMatch(n -> n.getId().equals(providerProfile.getId())),
+                "Phải quét trúng thợ quanh vị trí cơ sở mới");
+
+        // Quét quanh Q1 (10.7769, 106.7009 - cách 12km > bán kính 5km) -> KHÔNG tìm thấy thợ
+        List<NearbyProviderView> nearbyQ1 = providerProfileRepository.findNearby(10.7769, 106.7009, 5000, 10);
+        assertFalse(nearbyQ1.stream().anyMatch(n -> n.getId().equals(providerProfile.getId())),
+                "Không được quét trúng thợ ở vị trí cơ sở cũ ngoài bán kính");
+    }
+
+    @Test
+    @DisplayName("BE02: Khách xem hồ sơ thợ công khai -> Không lộ giấy tờ tùy thân và giấy phép")
+    void testGetPublicProfile_CustomerCannotSeeVerificationDocuments() throws Exception {
+        providerProfile.setApprovalStatus(ApprovalStatus.APPROVED);
+        providerProfile.setBusinessName("Tiệm Xe Uy Tín");
+        providerProfile.setAddress("456 Nguyễn Trãi, Quận 5");
+        providerProfile.setIdDocumentUrl("https://supabase.co/secret_id.jpg");
+        providerProfile.setBusinessLicenseUrl("https://supabase.co/secret_license.jpg");
+        providerProfileRepository.save(providerProfile);
+
+        mockMvc.perform(get("/api/providers/" + providerProfile.getId())
+                        .header("Authorization", "Bearer " + customerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(providerProfile.getId().toString()))
+                .andExpect(jsonPath("$.businessName").value("Tiệm Xe Uy Tín"))
+                .andExpect(jsonPath("$.address").value("456 Nguyễn Trãi, Quận 5"))
+                .andExpect(jsonPath("$.idDocumentUrl").doesNotExist())
+                .andExpect(jsonPath("$.businessLicenseUrl").doesNotExist())
+                .andExpect(jsonPath("$.rejectionReason").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("BE02: Khách xem hồ sơ thợ chưa duyệt (PENDING) -> 404 Not Found")
+    void testGetPublicProfile_UnapprovedProvider_Returns404() throws Exception {
+        providerProfile.setApprovalStatus(ApprovalStatus.PENDING);
+        providerProfileRepository.save(providerProfile);
+
+        mockMvc.perform(get("/api/providers/" + providerProfile.getId())
+                        .header("Authorization", "Bearer " + customerToken))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("BE02: Sửa hồ sơ cá nhân người dùng (PUT /api/users/me) không làm mất trạng thái duyệt của thợ")
+    void testUpdateUserProfile_PreservesProviderApprovalStatus() throws Exception {
+        providerProfile.setApprovalStatus(ApprovalStatus.APPROVED);
+        providerProfile.setActive(false);
+        providerProfileRepository.save(providerProfile);
+
+        UpdateUserProfileRequest updateReq = new UpdateUserProfileRequest(
+                "Tên Mới Sau Khi Đổi",
+                "0987654321",
+                "FEMALE",
+                "https://supabase.co/avatar_new.jpg"
+        );
+
+        mockMvc.perform(put("/api/users/me")
+                        .header("Authorization", "Bearer " + providerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fullName").value("Tên Mới Sau Khi Đổi"));
+
+        ProviderProfile reloaded = providerProfileRepository.findById(providerProfile.getId()).orElseThrow();
+        assertEquals(ApprovalStatus.APPROVED, reloaded.getApprovalStatus(),
+                "Cập nhật hồ sơ cá nhân không được làm mất trạng thái APPROVED của thợ");
+    }
+
+    @Test
+    @DisplayName("BE02: Dữ liệu cũ thiếu địa chỉ (address = null) vẫn đọc được bình thường")
+    void testLegacyData_NullAddress_ReadsSuccessfully() throws Exception {
+        providerProfile.setApprovalStatus(ApprovalStatus.APPROVED);
+        providerProfile.setAddress(null);
+        providerProfileRepository.save(providerProfile);
+
+        // 1. Thợ đọc hồ sơ của mình
+        mockMvc.perform(get("/api/providers/me")
+                        .header("Authorization", "Bearer " + providerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.address").doesNotExist());
+
+        // 2. Khách đọc hồ sơ công khai
+        mockMvc.perform(get("/api/providers/" + providerProfile.getId())
+                        .header("Authorization", "Bearer " + customerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.businessName").value("Tiệm Sửa Xe Phát Đạt"))
+                .andExpect(jsonPath("$.address").doesNotExist());
     }
 }
 

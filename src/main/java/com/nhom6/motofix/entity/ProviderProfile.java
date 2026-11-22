@@ -32,6 +32,9 @@ public class ProviderProfile {
     @Column(name = "business_license_url")
     private String businessLicenseUrl;
 
+    @Column(name = "address", columnDefinition = "TEXT")
+    private String address;
+
     @Column(name = "base_lat")
     private Float baseLat;
 

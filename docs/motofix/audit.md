@@ -77,14 +77,14 @@ Kết quả:
 | **Khách: Thêm xe** | Nhóm 02, TC-02-06..10; `CustomerVehicleWorkflowTests:testAddVehicle_*` | `POST /api/users/me/vehicles` | `CustomerVehicleController:addVehicle` | Đã test thêm xe, validate | Hoạt động chuẩn. | — |
 | **Khách: Sửa xe** | Nhóm 02, TC-02-11..15; `CustomerVehicleWorkflowTests:testUpdateVehicle_*` | `PUT /api/users/me/vehicles/{id}` | `CustomerVehicleController:updateVehicle` | Đã test kiểm tra quyền sở hữu | Hoạt động chuẩn. | — |
 | **Khách: Xóa xe** | Nhóm 02, TC-02-16..20; `CustomerVehicleWorkflowTests:testDeleteVehicle_*` | `DELETE /api/users/me/vehicles/{id}` | `CustomerVehicleController:deleteVehicle` | Đã test xóa và chặn user khác | Hoạt động chuẩn. | — |
-| **Thợ: Nộp hồ sơ xét duyệt** | Nhóm 03, TC-03-01..05; `ProviderProfileWorkflowTests` | `POST /api/providers/register` | `ProviderController:uploadProfile` | Đã test tạo hồ sơ PENDING | `ProviderProfileRequest` thiếu trường địa chỉ cơ sở bằng chữ (`address`), chỉ có tọa độ `baseLat`, `baseLng`. | **BE02** |
-| **Thợ: Xem hồ sơ cá nhân** | Nhóm 03, TC-03-06..10; `ProviderProfileWorkflowTests:testGetMyProfile_*` | `GET /api/providers/me` | `ProviderController:getMyProfile` | Đã test các trạng thái | DTO phản hồi thiếu địa chỉ cơ sở bằng chữ (`address`). | **BE02** |
-| **Thợ: Cập nhật / nộp lại hồ sơ** | Nhóm 03, TC-03-11..16; `ProviderProfileWorkflowTests:testUpdateMyProfile_*` | `PUT /api/providers/me` | `ProviderController:updateMyProfile` | Đã test chặn khi online/active booking | Thiếu cập nhật `address` văn bản. Đã đảm bảo đưa về `PENDING` và xóa `rejectionReason`. | **BE02** |
-| **Thợ: Bật/tắt nhận đơn** | Nhóm 03, TC-03-17..22; `ProviderProfileWorkflowTests:testUpdateActiveStatus_*` | `PATCH /api/providers/me/active` | `ProviderController:updateActiveStatus` | Đã test chặn khi chưa duyệt | Khi tắt nhận đơn (`isActive=false`): **thiếu** tự động chuyển các offer `PENDING`/`ACCEPTED` của thợ trên các đơn đang `SEARCHING` sang `EXPIRED`. | **BE02** |
-| **Admin: Xem danh sách chờ duyệt** | Nhóm 03, TC-03-23..27; `ProviderProfileWorkflowTests` | `GET /api/admin/providers/pending` | `AdminProviderController:getPendingProviders` | Đã test phân trang và quyền ADMIN | Hoạt động đúng đặc tả. | — |
-| **Admin: Duyệt thợ** | Nhóm 03, TC-03-28..31; `ProviderProfileWorkflowTests` | `PATCH /api/admin/providers/{id}/approve` | `AdminProviderController:approveProvider` | Đã test chuyển `APPROVED` | **Lệch nghiệp vụ:** mã nguồn hiện tại tự động bật `isActive = true`. Đặc tả Nhóm 03/11 đã chốt: duyệt xong thợ phải giữ `offline` (`isActive = false`) cho đến khi thợ chủ động bật. | **BE02** |
-| **Admin: Từ chối thợ** | Nhóm 03, TC-03-32..35; `ProviderProfileWorkflowTests` | `PATCH /api/admin/providers/{id}/reject` | `AdminProviderController:rejectProvider` | Đã test lưu lý do, giữ offline | Hoạt động chuẩn. | — |
-| **Khách: Xem hồ sơ thợ công khai** | Nhóm 03, TC-03-36..38 | `GET /api/providers/{providerId}` | *Chưa có mapping* | Không có trong controller | **Thiếu hoàn toàn**. Khách xem thợ ở danh sách offer cần xem hồ sơ công khai (tên, cơ sở, đánh giá, không lộ giấy tờ tùy thân). | **BE02** |
+| **Thợ: Nộp hồ sơ xét duyệt** | Nhóm 03, TC-03-01..05; `ProviderProfileWorkflowTests` | `POST /api/providers/register` | `ProviderController:uploadProfile` | [ĐẠT / TESTED] | Đã bổ sung `address` cơ sở thợ vào DTO và Entity. Hồ sơ khởi tạo `PENDING`, `isActive = false`. | **BE02 (Xong)** |
+| **Thợ: Xem hồ sơ cá nhân** | Nhóm 03, TC-03-06..10; `ProviderProfileWorkflowTests:testGetMyProfile_*` | `GET /api/providers/me` | `ProviderController:getMyProfile` | [ĐẠT / TESTED] | Đã trả về đầy đủ `address`, `baseLat`, `baseLng`, thông tin giấy tờ và trạng thái. Dữ liệu cũ null address đọc an toàn. | **BE02 (Xong)** |
+| **Thợ: Cập nhật / nộp lại hồ sơ** | Nhóm 03, TC-03-11..16; `ProviderProfileWorkflowTests:testUpdateMyProfile_*` | `PUT /api/providers/me` | `ProviderController:updateMyProfile` | [ĐẠT / TESTED] | Cập nhật `address`, tọa độ cơ sở. Chặn khi online hoặc có booking active. Reset về `PENDING`, xóa lý do từ chối. | **BE02 (Xong)** |
+| **Thợ: Bật/tắt nhận đơn** | Nhóm 03, TC-03-17..22; `ProviderProfileWorkflowTests:testUpdateActiveStatus_*` | `PATCH /api/providers/me/active` | `ProviderController:updateActiveStatus` | [ĐẠT / TESTED] | Chặn khi chưa duyệt. Khi tắt (`isActive=false`), tự động quét và expire toàn bộ offer `PENDING`/`ACCEPTED` trên các đơn `SEARCHING`. Cho phép tắt khi đang có đơn `IN_PROGRESS`. | **BE02 (Xong)** |
+| **Admin: Xem danh sách chờ duyệt** | Nhóm 03, TC-03-23..27; `ProviderProfileWorkflowTests` | `GET /api/admin/providers/pending` | `AdminProviderController:getPendingProviders` | [ĐẠT / TESTED] | Phân trang danh sách chờ duyệt, trả đầy đủ `address` cơ sở thợ. | — |
+| **Admin: Duyệt thợ** | Nhóm 03, TC-03-28..31; `ProviderProfileWorkflowTests` | `PATCH /api/admin/providers/{id}/approve` | `AdminProviderController:approveProvider` | [ĐẠT / TESTED] | Cấp role `PROVIDER`, chuyển `APPROVED`. **Chuẩn hóa:** giữ `isActive = false` sau khi duyệt. Có khóa bi quan `PESSIMISTIC_WRITE` chống 2 Admin duyệt cùng lúc. | **BE02 (Xong)** |
+| **Admin: Từ chối thợ** | Nhóm 03, TC-03-32..35; `ProviderProfileWorkflowTests` | `PATCH /api/admin/providers/{id}/reject` | `AdminProviderController:rejectProvider` | [ĐẠT / TESTED] | Validate bắt buộc lý do từ chối không được để trống (trả `400 Bad Request`). Giữ `isActive = false`. Khóa bi quan chống xung đột. | **BE02 (Xong)** |
+| **Khách: Xem hồ sơ thợ công khai** | Nhóm 03, TC-03-36..38; `ProviderProfileWorkflowTests` | `GET /api/providers/{providerId}` | `ProviderController:getPublicProfile` | [ĐẠT / TESTED] | Endpoint công khai trả `PublicProviderProfileResponse` (tên, address, rating, baseLat/Lng). Ẩn hoàn toàn giấy tờ CCCD/GPKD. Trả `404` nếu thợ chưa duyệt. | **BE02 (Xong)** |
 | **Upload ảnh/video sự cố** | Nhóm 04, TC-04-01..05 | `POST /api/media` | `MediaController:upload` | Có mã gọi SupabaseStorageService | Chỉ có mã và upload test; chưa có test tích hợp kiểm tra giới hạn 5 MiB ảnh / 50 MiB video / tổng tối đa 10 tệp. | **BE03** |
 | **Khách: Tạo yêu cầu cứu hộ** | Nhóm 04, TC-04-06..12 | `POST /api/bookings` | `BookingController:createBooking` | Có mã gọi phân phối 5 km | **Lệch & Thiếu:** `CreateBookingRequest` và entity `Booking` thiếu lưu thông tin xe (`vehicleBrand`, `vehicleModel`, `vehicleLicensePlate`) và địa chỉ điểm cứu hộ dạng chữ (`address`); thiếu chặn 1 khách không được mở 2 booking đồng thời. | **BE03** |
 | **Khách/Thợ: Đọc đơn đang active** | Nhóm 04, 06, 10; V6 `activeBooking` | `GET /api/bookings/active` *(hoặc mở rộng GET)* | *Chưa có mapping* | Không có endpoint đọc đơn active | **Thiếu hoàn toàn**. Hiện chỉ có `GET /api/bookings` lọc theo COMPLETED/CANCELLED, khi F5 trình duyệt không thể khôi phục đơn đang chạy (`SEARCHING`..`WAITING_PAYMENT`). | **BE03** |
@@ -235,11 +235,17 @@ BE00 (Audit & Baseline) -> BE01 (Tài khoản & Phân quyền) -> BE02 (Hồ sơ
   - Luồng gửi email đặt lại mật khẩu được kiểm thử thông qua test double `MockEmailService` (ghi nhận token và log, không gửi SMTP ra bên ngoài để đảm bảo tính ổn định và cô lập của test suite).
 - **Hợp đồng API cập nhật:**
   - Đã cập nhật chi tiết trong [api-contract.md](file:///d:/IE104-InternetVaCongNgheWeb-Backend/docs/motofix/api-contract.md).
-- **BE02 · Hồ sơ thợ, Địa chỉ cơ sở & Xét duyệt:**
-  - Bổ sung `address` cơ sở thợ vào entity và DTO.
-  - Sửa logic duyệt thợ của Admin: giữ `is_active = false`.
-  - Thêm logic tự động expire offer khi thợ chủ động tắt nhận đơn.
-  - Bổ sung API xem hồ sơ thợ công khai: `GET /api/providers/{providerId}`.
+- **BE02 · Hồ sơ thợ, Địa chỉ cơ sở & Xét duyệt (ĐÃ HOÀN THÀNH):**
+  - Bổ sung trường `address` cơ sở thợ vào `provider_profile` entity, DTOs (`ProviderProfileRequest`, `ProviderProfileResponse`) và mapper.
+  - Hỗ trợ dữ liệu lịch sử thiếu địa chỉ (`address = null`) đọc an toàn không lỗi.
+  - Sửa logic duyệt thợ của Admin (`PATCH /api/admin/providers/{id}/approve`): giữ `is_active = false` (thợ offline sau duyệt, chỉ nhận việc khi tự bật).
+  - Tắt nhận việc (`isActive = false`): tự động quét và expire toàn bộ offer `PENDING`/`ACCEPTED` của thợ trên các đơn `SEARCHING`. Cho phép thợ tắt online khi đang thực hiện đơn đã giao (`IN_PROGRESS`).
+  - Cập nhật cơ sở chỉ cho phép khi offline và không có booking active; vi phạm trả `400 Bad Request` và giữ nguyên cơ sở cũ. Cập nhật thành công đưa về `PENDING` và xóa lý do từ chối.
+  - Sửa hồ sơ cá nhân (`PUT /api/users/me`) độc lập, giữ nguyên trạng thái phê duyệt thợ.
+  - Admin từ chối bắt buộc lý do không rỗng (`400 Bad Request` nếu để trống).
+  - Khóa bi quan (`PESSIMISTIC_WRITE`) trên hồ sơ thợ chống xung đột khi 2 Admin duyệt/từ chối đồng thời.
+  - Bổ sung API công khai `GET /api/providers/{providerId}`: ẩn hoàn toàn giấy tờ CCCD/GPKD, trả `404` nếu chưa duyệt.
+  - Truy vấn PostGIS `findNearby`: bổ sung fallback tính geography từ `base_lng`/`base_lat` khi cột `location` null và áp dụng giới hạn bán kính dịch vụ `service_radius_km` của thợ.
 - **BE03 · Tạo booking, Xe snapshot, Điểm cứu hộ & Quản lý đơn active:**
   - Bổ sung snapshot xe và `address` điểm cứu hộ vào `Booking`.
   - Chặn 1 khách không mở 2 booking đồng thời.
@@ -259,3 +265,44 @@ BE00 (Audit & Baseline) -> BE01 (Tài khoản & Phân quyền) -> BE02 (Hồ sơ
   - Triển khai cơ chế đồng bộ sự kiện booking/offer qua WebSocket hoặc Polling.
   - Xây dựng module Chat giữa khách và thợ đã chọn.
   - Kiểm thử trọn vẹn kịch bản E2E hai vai (E2E-01 đến E2E-08).
+
+---
+
+## 8. Biên bản bàn giao đợt BE02 · Hồ sơ thợ, duyệt và địa chỉ cơ sở
+
+- **Thời điểm nghiệm thu:** 2026-11-22
+- **Trạng thái:** Hoàn tất trọn vẹn mọi yêu cầu của BE02.
+- **Kết quả kiểm thử:**
+  - `ProviderProfileWorkflowTests`: **33/33 test cases PASS (100%)** (23 ca gốc + 10 ca kiểm thử chuyên biệt mới cho BE02).
+  - Toàn bộ test suite repository: **168/168 test cases PASS (100% không suy thoái)**.
+  - Lệnh kiểm tra thực tế:
+    - `.\mvnw.cmd test -Dtest=ProviderProfileWorkflowTests`
+    - `.\mvnw.cmd test`
+- **Các ca kiểm thử mới bổ sung trong BE02 (`ProviderProfileWorkflowTests`):**
+  1. `testApproveAfterLogout_StaysOffline_ReceivesOfferOnlyAfterTurningOnline` (TC-03-08): Admin duyệt sau khi thợ logout, thợ giữ `isActive = false`, chỉ nhận offer khi đăng nhập lại và chủ động bật online.
+  2. `testTwoAdmins_ConcurrentProcessSameProfile_OnlyOneSucceeds` (TC-03-05): Hai Admin thao tác cùng lúc trên một hồ sơ, Admin 1 duyệt thành công, Admin 2 bị từ chối `400 Bad Request`.
+  3. `testAdminReject_BlankReason_BadRequest_StatusUnchanged` (TC-03-03): Từ chối với lý do rỗng/trắng bị chặn `400 Bad Request`, hồ sơ giữ nguyên `PENDING`.
+  4. `testUpdateFacilityAddress_BlockedWhenActiveBooking_KeepsOldAddress` (ADR-02): Đang có đơn cứu hộ thì chặn đổi cơ sở (`400 Bad Request`), giữ nguyên địa chỉ và tọa độ cũ.
+  5. `testTurnOffline_AllowedWhileWorking_KeepsCurrentBooking_ExpiresWaitingOffers` (TC-03-09): Thợ được phép tắt online khi đang làm việc (`IN_PROGRESS`), đơn hiện tại giữ nguyên, các offer chờ trên đơn `SEARCHING` bị hết hạn (`EXPIRED`).
+  6. `testSpatialSearch_AfterChangingFacilityLocation` (ADR-03): Đổi tọa độ cơ sở, PostGIS tìm kiếm không gian phản ánh tức thì vị trí mới.
+  7. `testGetPublicProfile_CustomerCannotSeeVerificationDocuments` (TC-03-07): Khách xem hồ sơ thợ công khai chỉ thấy tên, địa chỉ cơ sở, đánh giá, bán kính; ẩn hoàn toàn giấy tờ cá nhân CCCD/GPKD.
+  8. `testGetPublicProfile_UnapprovedProvider_Returns404`: Xem hồ sơ thợ chưa được duyệt trả về `404 Not Found`.
+  9. `testUpdateUserProfile_PreservesProviderApprovalStatus`: Sửa hồ sơ người dùng cá nhân không làm ảnh hưởng đến trạng thái phê duyệt thợ (`APPROVED` vẫn giữ nguyên).
+  10. `testLegacyData_NullAddress_ReadsSuccessfully`: Hồ sơ thợ cũ có `address = null` vẫn đọc bình thường qua API mà không phát sinh lỗi.
+- **Tập tin đã thay đổi & tạo mới:**
+  - `src/main/java/com/nhom6/motofix/entity/ProviderProfile.java`: Bổ sung `@Column(name = "address", columnDefinition = "TEXT") private String address;`.
+  - `src/main/java/com/nhom6/motofix/dto/request/ProviderProfileRequest.java`: Thêm `address` (hỗ trợ constructor tương thích ngược 6 tham số).
+  - `src/main/java/com/nhom6/motofix/dto/respond/ProviderProfileResponse.java`: Thêm `address`.
+  - `src/main/java/com/nhom6/motofix/dto/respond/PublicProviderProfileResponse.java`: DTO mới cho hồ sơ công khai (không lộ CCCD/GPKD).
+  - `src/main/java/com/nhom6/motofix/mapper/ProviderProfileMapper.java`: Thêm mapping sang `PublicProviderProfileResponse`.
+  - `src/main/java/com/nhom6/motofix/repository/ProviderProfileRepository.java`: Bổ sung `findByIdWithLock` (pessimistic lock) và cải tiến query PostGIS `findNearby` với fallback tọa độ và giới hạn bán kính dịch vụ.
+  - `src/main/java/com/nhom6/motofix/service/ProviderService.java`: Cập nhật logic duyệt giữ offline, expire offer khi tắt active, validate lý do từ chối, endpoint public profile.
+  - `src/main/java/com/nhom6/motofix/controller/ProviderController.java`: Bổ sung endpoint `GET /api/providers/{providerId}`.
+  - `src/test/java/com/nhom6/motofix/ProviderProfileWorkflowTests.java`: Cập nhật assertion giữ offline sau duyệt và bổ sung 10 test case mới.
+- **Trở ngại & Giải pháp:**
+  - *Trở ngại 1:* Constructor của `ProviderProfileRequest` bị gãy các test case cũ do thêm tham số `address`.
+    *Giải pháp:* Thêm constructor 6 tham số nạp chồng (overload) trỏ về canonical constructor với `address = null`.
+  - *Trở ngại 2:* Cột `location` dạng Geography của PostGIS có thể null trên dữ liệu mới insert từ JPA dẫn đến `ST_DWithin` không tìm thấy thợ.
+    *Giải pháp:* Cập nhật native query `findNearby` dùng `COALESCE(p.location, ST_SetSRID(ST_MakePoint(p.base_lng, p.base_lat), 4326)::geography)` làm fallback an toàn.
+  - *Trở ngại 3:* Test case tích hợp cũ `testIntegratedBusinessFlow_FullLifecycle` kỳ vọng `isActive = true` ngay sau khi Admin duyệt.
+    *Giải pháp:* Cập nhật assertion thành `assertFalse(approvedAgain.isActive())` khớp với quyết định đặc tả Nhóm 03/11 (duyệt xong thợ vẫn offline cho đến khi chủ động bật nhận việc).

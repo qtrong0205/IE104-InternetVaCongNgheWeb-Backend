@@ -15,6 +15,9 @@ public record ProviderProfileRequest(
         @JsonAlias({"business_license_url", "businessLicenseUrl"})
         String businessLicenseUrl,
 
+        @JsonAlias({"address"})
+        String address,
+
         @NotNull(message = "baseLat không được để trống")
         @JsonAlias({"base_lat", "baseLat"})
         Float baseLat,
@@ -26,5 +29,15 @@ public record ProviderProfileRequest(
         @JsonAlias({"service_radius_km", "serviceRadiusKm"})
         Float serviceRadiusKm
 ) {
+    public ProviderProfileRequest(
+            String businessName,
+            String idDocumentUrl,
+            String businessLicenseUrl,
+            Float baseLat,
+            Float baseLng,
+            Float serviceRadiusKm
+    ) {
+        this(businessName, idDocumentUrl, businessLicenseUrl, null, baseLat, baseLng, serviceRadiusKm);
+    }
 }
 

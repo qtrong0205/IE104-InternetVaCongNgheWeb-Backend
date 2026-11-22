@@ -11,6 +11,7 @@ public record ProviderProfileResponse(
         String businessName,
         String idDocumentUrl,
         String businessLicenseUrl,
+        String address,
         Float baseLat,
         Float baseLng,
         Float serviceRadiusKm,
