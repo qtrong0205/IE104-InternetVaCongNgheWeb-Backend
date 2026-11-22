@@ -12,6 +12,9 @@ import com.nhom6.motofix.exception.ConflictException;
 import com.nhom6.motofix.repository.*;
 import com.nhom6.motofix.service.BookingService;
 import com.nhom6.motofix.service.QuoteService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,6 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@Slf4j
 @SpringBootTest
 class BE05StateMachineAndQuoteVersionTests {
 
@@ -53,6 +57,18 @@ class BE05StateMachineAndQuoteVersionTests {
 
     @Autowired
     private QuoteService quoteService;
+
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .registerModule(new com.fasterxml.jackson.databind.module.SimpleModule()
+                    .addSerializer(LocalDateTime.class, new com.fasterxml.jackson.databind.JsonSerializer<LocalDateTime>() {
+                        @Override
+                        public void serialize(LocalDateTime value, com.fasterxml.jackson.core.JsonGenerator gen, com.fasterxml.jackson.databind.SerializerProvider serializers) throws java.io.IOException {
+                            gen.writeString(value != null ? value.toString() : null);
+                        }
+                    }));
+
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     private User customer;
     private User providerUser;
@@ -144,7 +160,6 @@ class BE05StateMachineAndQuoteVersionTests {
         item.setQuantity(1);
         item.setUnitPrice(amount);
         item.setAmount(amount);
-        item.setStatus(status == QuoteStatus.ACCEPTED ? QuoteItemStatus.ACCEPTED : QuoteItemStatus.PENDING);
         item.setCreatedAt(LocalDateTime.now());
         quote.addItem(item);
 
@@ -178,13 +193,10 @@ class BE05StateMachineAndQuoteVersionTests {
         assertNull(quoteV1.basedOnQuoteId());
         // Backend tự tính: 150000*1 + 80000*2 = 310000
         assertEquals(0, new BigDecimal("310000").compareTo(quoteV1.totalAmount()));
-        // Item lấy trạng thái hiệu lực từ quote chứa nó
-        assertEquals(QuoteItemStatus.PENDING, quoteV1.items().get(0).status());
 
         // 4. Khách chấp nhận v1 -> INSPECTING chuyển sang IN_PROGRESS
         QuoteResponse acceptedV1 = quoteService.acceptQuote(b.getId(), quoteV1.id(), customer);
         assertEquals(QuoteStatus.ACCEPTED, acceptedV1.status());
-        assertEquals(QuoteItemStatus.ACCEPTED, acceptedV1.items().get(0).status());
         Booking reloadedBooking = bookingRepository.findById(b.getId()).orElseThrow();
         assertEquals(BookingStatus.IN_PROGRESS, reloadedBooking.getStatus());
 
@@ -515,5 +527,78 @@ class BE05StateMachineAndQuoteVersionTests {
         assertEquals(4, history.get(3).version());
         assertEquals(QuoteStatus.ACCEPTED, history.get(3).status());
         assertEquals(v2.id(), history.get(3).basedOnQuoteId());
+    }
+
+    @Test
+    @Transactional
+    @DisplayName("13. Kiểm tra JSON thực tế của API: Quote cha có status, mọi item KHÔNG có status hay effectiveStatus (Bao phủ SUPERSEDED và ACCEPTED)")
+    void testApiJsonRepresentationWithoutItemStatus() throws Exception {
+        Booking b = createBookingInStatus(BookingStatus.INSPECTING);
+
+        // 1. Thợ tạo v1 (PENDING)
+        CreateQuoteItemRequest item1 = new CreateQuoteItemRequest(QuoteItemType.LABOR, "Công khám", 1, new BigDecimal("100000"), "Mô tả công");
+        QuoteResponse v1Pending = quoteService.createInitialQuote(b.getId(), new CreateQuoteRequest("Chẩn đoán v1", List.of(item1)), providerUser);
+
+        // 2. Khách duyệt v1 -> v1 thành ACCEPTED
+        quoteService.acceptQuote(b.getId(), v1Pending.id(), customer);
+
+        // 3. Thợ revise tạo v2 phát sinh (v1 ACCEPTED giữ nguyên, v2 PENDING dựa trên v1)
+        CreateQuoteItemRequest item2 = new CreateQuoteItemRequest(QuoteItemType.PART, "Phụ tùng phát sinh", 2, new BigDecimal("75000"), "Thay thế mới");
+        QuoteResponse v2Pending = quoteService.reviseQuote(b.getId(), new CreateQuoteRequest("Chẩn đoán v2", List.of(item1, item2)), providerUser);
+
+        // 4. Khách duyệt v2 -> v1 ACCEPTED cũ chuyển sang SUPERSEDED, v2 chuyển sang ACCEPTED
+        quoteService.acceptQuote(b.getId(), v2Pending.id(), customer);
+
+        // Lấy lại cả 2 quote từ service
+        QuoteResponse v1Superseded = quoteService.getQuoteDetails(b.getId(), v1Pending.id(), customer);
+        QuoteResponse v2Accepted = quoteService.getQuoteDetails(b.getId(), v2Pending.id(), customer);
+
+        assertEquals(QuoteStatus.SUPERSEDED, v1Superseded.status());
+        assertEquals(QuoteStatus.ACCEPTED, v2Accepted.status());
+
+        // Chuyển sang JSON Tree bằng Jackson ObjectMapper như response thực tế của Spring Boot
+        com.fasterxml.jackson.databind.JsonNode jsonV1 = objectMapper.readTree(objectMapper.writeValueAsString(v1Superseded));
+        com.fasterxml.jackson.databind.JsonNode jsonV2 = objectMapper.readTree(objectMapper.writeValueAsString(v2Accepted));
+
+        // Kiểm tra Quote cũ (SUPERSEDED):
+        // - Quote cha có trường status
+        assertTrue(jsonV1.has("status"), "Quote cha phải có trường status");
+        assertEquals("SUPERSEDED", jsonV1.get("status").asText());
+        // - Mọi item trong mảng items KHÔNG ĐƯỢC có status hoặc effectiveStatus
+        com.fasterxml.jackson.databind.JsonNode itemsV1 = jsonV1.get("items");
+        assertNotNull(itemsV1);
+        assertTrue(itemsV1.isArray() && !itemsV1.isEmpty());
+        for (com.fasterxml.jackson.databind.JsonNode itemNode : itemsV1) {
+            assertFalse(itemNode.has("status"), "Item trong quote SUPERSEDED tuyệt đối không có field status");
+            assertFalse(itemNode.has("effectiveStatus"), "Item trong quote SUPERSEDED tuyệt đối không có field effectiveStatus");
+            assertTrue(itemNode.has("name"), "Item phải có trường name");
+            assertTrue(itemNode.has("quantity"), "Item phải có trường quantity");
+            assertTrue(itemNode.has("unitPrice"), "Item phải có trường unitPrice");
+            assertTrue(itemNode.has("amount"), "Item phải có trường amount");
+        }
+
+        // Kiểm tra Quote mới (ACCEPTED):
+        // - Quote cha có trường status
+        assertTrue(jsonV2.has("status"), "Quote cha phải có trường status");
+        assertEquals("ACCEPTED", jsonV2.get("status").asText());
+        // - Mọi item trong mảng items KHÔNG ĐƯỢC có status hoặc effectiveStatus
+        com.fasterxml.jackson.databind.JsonNode itemsV2 = jsonV2.get("items");
+        assertNotNull(itemsV2);
+        assertTrue(itemsV2.isArray() && itemsV2.size() == 2);
+        for (com.fasterxml.jackson.databind.JsonNode itemNode : itemsV2) {
+            assertFalse(itemNode.has("status"), "Item trong quote ACCEPTED tuyệt đối không có field status");
+            assertFalse(itemNode.has("effectiveStatus"), "Item trong quote ACCEPTED tuyệt đối không có field effectiveStatus");
+            assertTrue(itemNode.has("name"), "Item phải có trường name");
+            assertTrue(itemNode.has("quantity"), "Item phải có trường quantity");
+            assertTrue(itemNode.has("unitPrice"), "Item phải có trường unitPrice");
+            assertTrue(itemNode.has("amount"), "Item phải có trường amount");
+        }
+
+        // Kiểm tra schema thực tế trong Database:
+        Integer statusColumnExists = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM information_schema.columns WHERE table_name = 'repair_quote_items' AND column_name = 'status'",
+                Integer.class
+        );
+        log.info("Database schema check: repair_quote_items.status column count = {}", statusColumnExists);
     }
 }

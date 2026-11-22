@@ -8,7 +8,6 @@ import com.nhom6.motofix.entity.RepairQuote;
 import com.nhom6.motofix.entity.RepairQuoteItem;
 import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.enums.BookingStatus;
-import com.nhom6.motofix.enums.QuoteItemStatus;
 import com.nhom6.motofix.enums.QuoteStatus;
 import com.nhom6.motofix.exception.ConflictException;
 import com.nhom6.motofix.exception.ResourceNotFoundException;
@@ -77,7 +76,6 @@ public class QuoteService {
 
             BigDecimal itemAmount = itemReq.unitPrice().multiply(BigDecimal.valueOf(itemReq.quantity()));
             item.setAmount(itemAmount);
-            item.setStatus(QuoteItemStatus.PENDING);
             item.setCreatedAt(LocalDateTime.now());
 
             quote.addItem(item);
@@ -156,13 +154,6 @@ public class QuoteService {
         // Cập nhật trạng thái quote sang ACCEPTED
         quote.setStatus(QuoteStatus.ACCEPTED);
         quote.setRespondedAt(LocalDateTime.now());
-
-        // Cập nhật tất cả các item trong quote sang ACCEPTED
-        if (quote.getItems() != null) {
-            for (RepairQuoteItem item : quote.getItems()) {
-                item.setStatus(QuoteItemStatus.ACCEPTED);
-            }
-        }
 
         // Nếu booking đang ở INSPECTING thì chuyển sang IN_PROGRESS
         if (booking.getStatus() == BookingStatus.INSPECTING) {
@@ -260,7 +251,6 @@ public class QuoteService {
 
             BigDecimal itemAmount = itemReq.unitPrice().multiply(BigDecimal.valueOf(itemReq.quantity()));
             item.setAmount(itemAmount);
-            item.setStatus(QuoteItemStatus.PENDING);
             item.setCreatedAt(LocalDateTime.now());
 
             revisedQuote.addItem(item);

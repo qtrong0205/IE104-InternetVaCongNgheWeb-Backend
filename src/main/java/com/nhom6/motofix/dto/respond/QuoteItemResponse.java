@@ -1,7 +1,6 @@
 package com.nhom6.motofix.dto.respond;
 
 import com.nhom6.motofix.entity.RepairQuoteItem;
-import com.nhom6.motofix.enums.QuoteItemStatus;
 import com.nhom6.motofix.enums.QuoteItemType;
 
 import java.math.BigDecimal;
@@ -17,7 +16,6 @@ public record QuoteItemResponse(
         BigDecimal unitPrice,
         String description,
         BigDecimal amount,
-        QuoteItemStatus status,
         LocalDateTime createdAt
 ) {
     public static QuoteItemResponse from(RepairQuoteItem item) {
@@ -30,7 +28,6 @@ public record QuoteItemResponse(
                 item.getUnitPrice(),
                 item.getDescription(),
                 item.getAmount(),
-                item.getEffectiveStatus(),
                 item.getCreatedAt()
         );
     }

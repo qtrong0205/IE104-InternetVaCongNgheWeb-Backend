@@ -406,7 +406,7 @@ BE00 (Audit & Baseline) -> BE01 (Tài khoản & Phân quyền) -> BE02 (Hồ sơ
 - **Thời điểm nghiệm thu:** 2026-11-22
 - **Trạng thái:** Hoàn tất trọn vẹn mọi yêu cầu của BE05.
 - **Kết quả kiểm thử:**
-  - `BE05StateMachineAndQuoteVersionTests`: **12/12 test cases PASS (100%)**.
+  - `BE05StateMachineAndQuoteVersionTests`: **13/13 test cases PASS (100%)**.
   - `QuoteNegotiationWorkflowTests`: **34/34 test cases PASS (100%)**.
   - `BookingCompletionAndReviewWorkflowTests`: **25/25 test cases PASS (100%)**.
   - Toàn bộ test suite repository: **201/201 test cases PASS (100% không suy thoái)**.
@@ -431,14 +431,20 @@ BE00 (Audit & Baseline) -> BE01 (Tài khoản & Phân quyền) -> BE02 (Hồ sơ
       - TH3 (có cả ACCEPTED và PENDING): v3 CANCELLED, giữ v2 ACCEPTED, tạo v4 PENDING (`based_on_quote_id = v2.id`, không trỏ vào v3).
       - Khách accept v4: v2 ACCEPTED chuyển `SUPERSEDED`, v4 chuyển `ACCEPTED`.
       - `getQuotesForBooking` trả về đầy đủ 4 phiên bản tăng dần theo version với đúng mã và trạng thái lịch sử.
+  13. `testApiJsonRepresentationWithoutItemStatus`: Kiểm tra biểu diễn JSON thực tế của API: Quote cha vẫn trả `status` (`SUPERSEDED` hoặc `ACCEPTED`), mọi phần tử trong `items` đều **không có** `status` hoặc `effectiveStatus`.
 - **Tập tin đã thay đổi & tạo mới:**
-  - `src/main/java/com/nhom6/motofix/entity/RepairQuoteItem.java`: Bổ sung `getEffectiveStatus()` để item nhận trạng thái hiệu lực tự động từ Quote chứa nó theo đặc tả, loại bỏ phụ thuộc status riêng của item khỏi nghiệp vụ lõi.
-  - `src/main/java/com/nhom6/motofix/dto/respond/QuoteItemResponse.java`: Ánh xạ `status` lấy từ `item.getEffectiveStatus()`.
+  - `src/main/java/com/nhom6/motofix/entity/RepairQuoteItem.java`: Xóa bỏ hoàn toàn trường `status`, annotation `@Column status` và toàn bộ method `getEffectiveStatus()`.
+  - `src/main/java/com/nhom6/motofix/dto/respond/QuoteItemResponse.java`: Xóa bỏ trường `status`/`effectiveStatus` khỏi DTO.
+  - `src/main/java/com/nhom6/motofix/service/QuoteService.java`: Rà soát và loại bỏ toàn bộ thao tác đọc/ghi `item.setStatus(...)` khi tạo (createInitialQuote), sửa (reviseQuote) và duyệt (acceptQuote).
+  - `src/main/java/com/nhom6/motofix/enums/QuoteItemStatus.java`: Đã xóa bỏ hoàn toàn enum do không còn nơi sử dụng.
+  - `src/main/resources/db/migration/V1.5.0__drop_repair_quote_items_status.sql` *(Mới)*: Script migration chuẩn bị cho release, drop cột `status` và drop NOT NULL constraint an toàn, tuân thủ nguyên tắc không áp migration trực tiếp lên DB phục vụ người dùng.
   - `src/main/java/com/nhom6/motofix/repository/BookingOfferRepository.java`: Bổ sung `clearAutomatically = true, flushAutomatically = true` cho các phương thức modifying update (`expireAllOffersForBooking`, `expireRemainingOffers`, `expireOffers`) để đồng bộ ngay lập tức Persistence Context với DB khi hủy đơn.
-  - `src/test/java/com/nhom6/motofix/BE05StateMachineAndQuoteVersionTests.java` *(Mới)*: Bộ test 12 ca kiểm thử chuyên sâu cho toàn bộ yêu cầu của đợt BE05.
-  - `docs/motofix/api-contract.md`: Cập nhật phiên bản 1.5.0, bổ sung quy ước BE05 cho Item hiệu lực và checklist UI.
+  - `src/test/java/com/nhom6/motofix/BE05StateMachineAndQuoteVersionTests.java` *(Mới)*: Bộ test 13 ca kiểm thử chuyên sâu cho toàn bộ yêu cầu của đợt BE05, bao gồm kiểm chứng JSON response không có status trong item.
+  - `docs/motofix/api-contract.md`: Cập nhật phiên bản 1.5.0, cập nhật schema DTO QuoteItemResponse và quy tắc bỏ hoàn toàn status riêng của item.
   - `docs/motofix/audit.md`: Cập nhật tiến độ hoàn thành BE05.
 - **Trở ngại & Giải pháp:**
   - *Trở ngại 1:* Khi hủy đơn trong giao dịch kiểm thử có `@Transactional`, phương thức `@Modifying UPDATE` trên `BookingOfferRepository` cập nhật trực tiếp database nhưng không làm mới 1st-level cache của Hibernate. Khi test đọc lại `offerPending`, Hibernate trả về đối tượng cũ trong bộ nhớ đệm (vẫn mang status `PENDING`) gây lỗi assertion.
     *Giải pháp:* Thêm thuộc tính `(flushAutomatically = true, clearAutomatically = true)` vào annotation `@Modifying` của `expireAllOffersForBooking` và các truy vấn liên quan trong `BookingOfferRepository.java`.
+  - *Trở ngại 2:* Nguy cơ database cũ có ràng buộc `NOT NULL` trên cột `status` của bảng `repair_quote_items` khiến lệnh insert entity mới (đã bỏ mapping status) bị vi phạm ràng buộc toàn vẹn.
+    *Giải pháp:* Kiểm tra schema metadata thực tế trên database Supabase; soạn thảo migration script `V1.5.0__drop_repair_quote_items_status.sql` với lệnh drop constraint NOT NULL an toàn trước khi drop column; kiểm chứng lệnh insert thực tế chạy thành công trong test suite.
 

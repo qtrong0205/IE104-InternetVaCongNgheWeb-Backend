@@ -1,6 +1,5 @@
 package com.nhom6.motofix.entity;
 
-import com.nhom6.motofix.enums.QuoteItemStatus;
 import com.nhom6.motofix.enums.QuoteItemType;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -45,26 +44,6 @@ public class RepairQuoteItem {
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal amount = BigDecimal.ZERO;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private QuoteItemStatus status = QuoteItemStatus.PENDING;
-
-    /**
-     * Lấy trạng thái hiệu lực của item từ Quote chứa nó theo đặc tả:
-     * "Mỗi item lấy trạng thái hiệu lực từ quote chứa nó. Bỏ status riêng của repair_quote_items khỏi mô hình đích, DTO và logic tạo/duyệt quote."
-     */
-    public QuoteItemStatus getEffectiveStatus() {
-        if (this.quote != null && this.quote.getStatus() != null) {
-            return switch (this.quote.getStatus()) {
-                case ACCEPTED -> QuoteItemStatus.ACCEPTED;
-                case PENDING -> QuoteItemStatus.PENDING;
-                case CANCELLED, DECLINED -> QuoteItemStatus.CANCELLED;
-                default -> QuoteItemStatus.PENDING;
-            };
-        }
-        return this.status != null ? this.status : QuoteItemStatus.PENDING;
-    }
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;

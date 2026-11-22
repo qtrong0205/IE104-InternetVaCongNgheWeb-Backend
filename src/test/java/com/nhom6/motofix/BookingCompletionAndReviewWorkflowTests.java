@@ -134,7 +134,6 @@ class BookingCompletionAndReviewWorkflowTests {
         item.setQuantity(1);
         item.setUnitPrice(BigDecimal.valueOf(150000));
         item.setAmount(BigDecimal.valueOf(150000));
-        item.setStatus(status == QuoteStatus.ACCEPTED ? QuoteItemStatus.ACCEPTED : QuoteItemStatus.PENDING);
         item.setCreatedAt(LocalDateTime.now());
         quote.addItem(item);
 

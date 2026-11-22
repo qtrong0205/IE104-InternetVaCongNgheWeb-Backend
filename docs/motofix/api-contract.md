@@ -685,15 +685,46 @@
 ### 8.5. Xem danh sách các phiên bản báo giá `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `GET /api/bookings/{id}/quotes`
 - **Role:** Khách chủ đơn hoặc Thợ phụ trách
-- **Response:** `200 OK` (Danh sách các phiên bản quote sắp xếp tăng dần theo version; kèm `basedOnQuoteId` và danh sách items mà mỗi item lấy trạng thái hiệu lực trực tiếp từ quote chứa nó).
+- **Response:** `200 OK` (Danh sách các phiên bản quote sắp xếp tăng dần theo version; kèm `basedOnQuoteId` và danh sách `items`. Mọi item trong `items` đều **không có** trường `status` hoặc `effectiveStatus`).
+- **Response JSON cấu trúc mẫu:**
+  ```json
+  [
+    {
+      "id": "7fa85f64-5717-4562-b3fc-2c963f66afa1",
+      "quoteId": "7fa85f64-5717-4562-b3fc-2c963f66afa1",
+      "bookingId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "version": 1,
+      "basedOnQuoteId": null,
+      "diagnosisNote": "Hỏng bugi",
+      "totalAmount": 145000,
+      "status": "ACCEPTED",
+      "createdAt": "2026-11-22T10:00:00",
+      "respondedAt": "2026-11-22T10:05:00",
+      "items": [
+        {
+          "id": "8fa85f64-5717-4562-b3fc-2c963f66afa2",
+          "itemId": "8fa85f64-5717-4562-b3fc-2c963f66afa2",
+          "itemType": "PART",
+          "name": "Bugi NGK chân dài",
+          "quantity": 1,
+          "unitPrice": 95000,
+          "description": "Thay thế linh kiện mới",
+          "amount": 95000,
+          "createdAt": "2026-11-22T10:00:00"
+        }
+      ]
+    }
+  ]
+  ```
 
 ### 8.6. Xem chi tiết một phiên bản báo giá `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `GET /api/bookings/{id}/quotes/{quoteId}`
 - **Role:** Khách chủ đơn hoặc Thợ phụ trách
 - **Response:** `200 OK` (`QuoteResponse` chi tiết của phiên bản được yêu cầu).
 
-### 8.7. Quy tắc Item và Checklist Hoàn thành (BE05 Standard)
-- **Hiệu lực Item:** Loại bỏ phụ thuộc status riêng của từng item khỏi entity và DTO. Mỗi item nhận trạng thái hiệu lực tự động từ Quote chứa nó (`PENDING`, `ACCEPTED`, `CANCELLED`).
+### 8.7. Quy tắc Bỏ Hoàn Toàn Status Riêng Của Item (BE05 Final Standard)
+- **Loại bỏ hoàn toàn status riêng:** Đã xóa bỏ field `status`, annotation `@Column status` và toàn bộ `getEffectiveStatus()` khỏi `RepairQuoteItem`. Xóa trường `status`/`effectiveStatus` khỏi `QuoteItemResponse`. Xóa enum `QuoteItemStatus`.
+- **Hiệu lực Item:** Item hoàn toàn không mang trạng thái riêng; hiệu lực của từng item được đại diện trực tiếp và duy nhất qua trường `status` của Quote cha (`RepairQuote`).
 - **Checklist thợ:** Hoàn toàn nằm ở tầng UI; API `PATCH /api/bookings/{id}/complete` không yêu cầu và không phụ thuộc vào bất kỳ payload checklist nào, hoàn thành sửa chữa thành công khi đủ 3 điều kiện backend (IN_PROGRESS, đúng 1 ACCEPTED, không còn PENDING).
 
 ---

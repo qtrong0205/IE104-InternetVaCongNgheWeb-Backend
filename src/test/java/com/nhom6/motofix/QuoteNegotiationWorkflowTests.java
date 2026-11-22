@@ -119,7 +119,6 @@ class QuoteNegotiationWorkflowTests {
         item.setQuantity(2);
         item.setUnitPrice(BigDecimal.valueOf(50000));
         item.setAmount(BigDecimal.valueOf(100000));
-        item.setStatus(status == QuoteStatus.ACCEPTED ? QuoteItemStatus.ACCEPTED : QuoteItemStatus.PENDING);
         item.setCreatedAt(LocalDateTime.now());
         quote.addItem(item);
 
@@ -142,7 +141,6 @@ class QuoteNegotiationWorkflowTests {
         assertEquals(QuoteStatus.ACCEPTED, res.status());
         assertNotNull(res.respondedAt());
         assertEquals(1, res.items().size());
-        assertEquals(QuoteItemStatus.ACCEPTED, res.items().get(0).status());
 
         Booking updatedBooking = bookingRepository.findById(booking.getId()).orElseThrow();
         assertEquals(BookingStatus.IN_PROGRESS, updatedBooking.getStatus());
@@ -598,7 +596,6 @@ class QuoteNegotiationWorkflowTests {
         RepairQuote reloadedV1 = quoteRepository.findById(quoteV1.getId()).orElseThrow();
         assertEquals(QuoteStatus.ACCEPTED, reloadedV1.getStatus());
         assertEquals(1, reloadedV1.getItems().size());
-        assertEquals(QuoteItemStatus.ACCEPTED, reloadedV1.getItems().get(0).getStatus());
 
         // STT 11: Không tạo quote mới, tổng số quote không đổi
         int countAfter = quoteRepository.findByBookingIdOrderByVersionAsc(booking.getId()).size();
