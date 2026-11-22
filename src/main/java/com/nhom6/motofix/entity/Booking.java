@@ -27,6 +27,18 @@ public class Booking {
     @Column(name = "problem_description", nullable = false, columnDefinition = "TEXT")
     private String problemDescription;
 
+    @Column(name = "address", columnDefinition = "TEXT")
+    private String address;
+
+    @Column(name = "vehicle_brand", length = 100)
+    private String vehicleBrand;
+
+    @Column(name = "vehicle_model", length = 100)
+    private String vehicleModel;
+
+    @Column(name = "vehicle_license_plate", length = 30)
+    private String vehicleLicensePlate;
+
     @Column(nullable = false)
     private Double latitude;
 

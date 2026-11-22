@@ -52,6 +52,33 @@ public class BookingController {
                 .body(bookingService.createBooking(request, user.getId()));
     }
 
+    /**
+     * API đọc thông tin đơn cứu hộ đang mở (active booking) để khôi phục trạng thái sau F5.
+     * GET /api/bookings/active
+     */
+    @GetMapping("/active")
+    public ResponseEntity<BookingResponse> getActiveBooking(
+            @AuthenticationPrincipal User user
+    ) {
+        BookingResponse response = bookingService.getActiveBooking(user.getId());
+        if (response == null) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * API xem chi tiết một đơn cứu hộ theo ID.
+     * GET /api/bookings/{id}
+     */
+    @GetMapping("/{id}")
+    public ResponseEntity<BookingResponse> getBookingById(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal User user
+    ) {
+        return ResponseEntity.ok(bookingService.getBookingById(id, user));
+    }
+
     @GetMapping
     @PreAuthorize("hasAnyRole('CUSTOMER', 'USER')")
     public ResponseEntity<Page<BookingResponse>> getCustomerBookings(

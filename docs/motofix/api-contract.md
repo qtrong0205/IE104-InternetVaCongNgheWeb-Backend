@@ -1,6 +1,6 @@
 # MotoFix Backend · Hợp đồng API (API Contract)
 
-> **Phiên bản tài liệu:** 1.2.0 (Hoàn thành đợt BE02 · Hồ sơ thợ, duyệt và địa chỉ cơ sở)  
+> **Phiên bản tài liệu:** 1.3.0 (Hoàn thành đợt BE03 · Tạo và đọc booking, xe, media)  
 > **Phiên bản mã nguồn cơ sở (Git commit):** `9509449983f02cf2215cfd8b3b867f0a6f924359` (Branch: `main`)  
 > **Hệ thống:** Java 17 / Spring Boot 4.1.1 / PostgreSQL 17.6 PostGIS / Supabase Storage  
 
@@ -406,11 +406,11 @@
 
 ## 5. Nhóm 04: Upload Media & Tạo yêu cầu cứu hộ
 
-### 5.1. Upload ảnh / video `[CHỈ THẤY TRONG MÃ]`
+### 5.1. Upload ảnh / video `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `POST /api/media`
 - **Content-Type:** `multipart/form-data`
 - **Role:** Người dùng đã xác thực
-- **Request:** Danh sách tệp `files` (tối đa 10 tệp cộng dồn, ảnh ≤ 5 MiB, video ≤ 50 MiB).
+- **Request:** Danh sách tệp `files` (tối đa 10 tệp cộng dồn, ảnh ≤ 5 MiB [JPEG/PNG/WebP], video ≤ 50 MiB [MP4/MOV/WebM]).
 - **Response:** `200 OK`
   ```json
   [
@@ -420,44 +420,78 @@
     }
   ]
   ```
+- **Lỗi tiêu biểu:** `400 Bad Request` nếu tệp vượt quá 5 MiB (ảnh) hoặc 50 MiB (video), gửi quá 10 tệp, tệp rỗng, hoặc định dạng không hỗ trợ.
 
-### 5.2. Tạo booking cứu hộ `[LỆCH - CẦN ĐIỀU CHỈNH]`
+### 5.2. Tạo booking cứu hộ `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `POST /api/bookings`
 - **Role:** `CUSTOMER` / `USER`
-- **Điều kiện trạng thái:** Khách không được có booking active nào khác (`SEARCHING` .. `WAITING_PAYMENT`).
+- **Điều kiện trạng thái:** Người dùng không được có booking active nào khác qua cả 2 vai (`SEARCHING` .. `WAITING_PAYMENT`).
 - **Request Body (Đặc tả chuẩn):**
   ```json
   {
+    "problemDescription": "Xe đề máy không nổ, nghi hết bình ắc quy",
+    "address": "86 Nguyễn Thị Minh Khai, Quận 3, TP.HCM",
+    "latitude": 10.776889,
+    "longitude": 106.695380,
     "vehicleBrand": "Honda",
     "vehicleModel": "Vision",
     "vehicleLicensePlate": "59X2-182.36",
-    "problemDescription": "Xe đề máy không nổ, nghi hết bình ắc quy",
-    "latitude": 10.776889,
-    "longitude": 106.695380,
-    "address": "86 Nguyễn Thị Minh Khai, Quận 3, TP.HCM",
     "media": [
       {
-        "mediaUrl": "https://.../img1.jpg",
-        "mediaType": "IMAGE"
+        "url": "https://storage.motofix.vn/img1.jpg",
+        "type": "IMAGE"
       }
     ]
   }
   ```
-- **Response:** `201 CREATED` (Booking ở trạng thái `SEARCHING`, tự động quét và phát offer lượt 1 trong bán kính 5 km).
-- **Lỗi tiêu biểu:** `409 Conflict` khi khách đã có đơn đang xử lý.
-- **Hành vi bổ sung (BE03):** Thêm trường thông tin xe và địa chỉ vào DTO/Entity.
+- **Response:** `201 CREATED`
+  ```json
+  {
+    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "status": "SEARCHING",
+    "problemDescription": "Xe đề máy không nổ, nghi hết bình ắc quy",
+    "address": "86 Nguyễn Thị Minh Khai, Quận 3, TP.HCM",
+    "latitude": 10.776889,
+    "longitude": 106.695380,
+    "vehicleBrand": "Honda",
+    "vehicleModel": "Vision",
+    "vehicleLicensePlate": "59X2-182.36",
+    "media": [
+      {
+        "url": "https://storage.motofix.vn/img1.jpg",
+        "type": "IMAGE"
+      }
+    ],
+    "createdAt": "2026-11-22T17:40:00",
+    "customerId": "7fa85f64-5717-4562-b3fc-2c963f66af77",
+    "providerId": null,
+    "paymentMethod": null,
+    "totalAmount": null
+  }
+  ```
+- **Hành vi (BE03):**
+  - Lưu bản chụp thông tin xe (`vehicleBrand`, `vehicleModel`, `vehicleLicensePlate`) và bộ địa chỉ/tọa độ đã xác nhận vào `Booking`. Việc sửa hoặc xóa xe trong danh mục cá nhân sau này hoàn toàn không làm đổi thông tin snapshot trên đơn.
+  - Khóa bi quan hàng User (`findByIdWithLock`) chống xung đột khi mở 2 tab gửi đơn đồng thời: đúng 1 đơn được tạo, tab còn lại bị từ chối `409 Conflict`.
+  - Tự động quét và phát offer lượt 1 trong bán kính 5 km trong cùng giao dịch tạo booking.
+  - Từ chối `400 Bad Request` nếu thiếu `address`, tọa độ ngoài phạm vi `[-90, 90]` hoặc `[-180, 180]`, hoặc quá 10 media (tệp thứ 11).
 
-### 5.3. Đọc thông tin đơn đang xử lý (Active Booking) `[ĐỀ XUẤT / CẦN BỔ SUNG]`
+### 5.3. Đọc thông tin đơn đang xử lý (Active Booking) `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `GET /api/bookings/active`
-- **Role:** `CUSTOMER` hoặc `PROVIDER`
-- **Response:** `200 OK`
-  - Nếu có đơn active: trả về chi tiết `BookingResponse` (kèm trạng thái hiện tại, thông tin xe, địa chỉ, thợ phụ trách nếu đã chọn).
-  - Nếu không có: trả `204 No Content` hoặc `null`.
+- **Role:** Người dùng đã xác thực (Khách hoặc Thợ)
+- **Response:**
+  - Nếu có đơn đang active (`SEARCHING` .. `WAITING_PAYMENT`): `200 OK` kèm toàn bộ `BookingResponse` (trạng thái, xe snapshot, địa chỉ, thợ phụ trách nếu đã chọn).
+  - Nếu không có đơn mở nào: `204 No Content`.
+- **Ý nghĩa:** Cho phép phục hồi nguyên vẹn màn hình và bước hiện tại của quy trình sau khi F5 / tải lại trang hoặc đăng nhập lại.
 
-### 5.4. Xem chi tiết một booking `[ĐỀ XUẤT / CẦN BỔ SUNG]`
+### 5.4. Xem chi tiết một booking `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `GET /api/bookings/{id}`
-- **Role:** Khách hàng chủ đơn, Thợ được phân công, hoặc ADMIN.
-- **Response:** `200 OK` (Toàn bộ chi tiết booking).
+- **Role:** Người dùng đã xác thực
+- **Phân quyền truy cập (Access Control):**
+  - Khách hàng chủ đơn (`customerId = user.id`): Xem được (`200 OK`).
+  - Thợ được phân công cho đơn (`provider.user.id = user.id`): Xem được (`200 OK`).
+  - Quản trị viên (`ADMIN`): Xem được (`200 OK`).
+  - Người dùng khác (khách lạ, thợ không được gán): Bị chặn `403 Forbidden`.
+  - ID không tồn tại: Trả về `404 Not Found`.
 
 ---
 

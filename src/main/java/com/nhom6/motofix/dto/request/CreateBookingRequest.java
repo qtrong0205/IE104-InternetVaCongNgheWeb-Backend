@@ -17,6 +17,29 @@ public record CreateBookingRequest(
         Double latitude,
 
         @NotNull @DecimalMin("-180.0") @DecimalMax("180.0")
-        Double longitude
+        Double longitude,
+
+        @NotBlank
+        String address,
+
+        @NotBlank
+        @Size(max = 100)
+        String vehicleBrand,
+
+        @NotBlank
+        @Size(max = 100)
+        String vehicleModel,
+
+        @Size(max = 30)
+        String vehicleLicensePlate
 ) {
+    public CreateBookingRequest(
+            String problemDescription,
+            List<MediaRequest> media,
+            Double latitude,
+            Double longitude
+    ) {
+        this(problemDescription, media, latitude, longitude, null, null, null, null);
+    }
 }
+

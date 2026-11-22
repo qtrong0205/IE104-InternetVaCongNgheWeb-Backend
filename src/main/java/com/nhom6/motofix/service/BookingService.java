@@ -61,11 +61,63 @@ public class BookingService {
 
     @Transactional
     public BookingResponse createBooking(CreateBookingRequest request, UUID userId) {
-        var user = userRepository.findById(userId)
+        // 1. Khóa bi quan hàng User để tuần tự hóa các yêu cầu tạo booking đồng thời từ cùng tài khoản
+        var user = userRepository.findByIdWithLock(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
+        // 2. Kiểm tra tính hợp lệ của địa chỉ và tọa độ
+        if (request.address() == null || request.address().isBlank()) {
+            throw new BadRequestException("Địa chỉ cứu hộ không được để trống");
+        }
+        if (request.vehicleBrand() == null || request.vehicleBrand().isBlank()) {
+            throw new BadRequestException("Hãng xe không được để trống");
+        }
+        if (request.vehicleModel() == null || request.vehicleModel().isBlank()) {
+            throw new BadRequestException("Dòng xe không được để trống");
+        }
+        if (request.latitude() == null || request.latitude() < -90.0 || request.latitude() > 90.0) {
+            throw new BadRequestException("Vĩ độ không hợp lệ (phải từ -90.0 đến 90.0)");
+        }
+        if (request.longitude() == null || request.longitude() < -180.0 || request.longitude() > 180.0) {
+            throw new BadRequestException("Kinh độ không hợp lệ (phải từ -180.0 đến 180.0)");
+        }
+        if (request.media() != null && request.media().size() > 10) {
+            throw new BadRequestException("Tối đa 10 tệp media cho một đơn cứu hộ");
+        }
+
+        // 3. Giới hạn tối đa một đơn mở qua cả hai vai
+        List<Booking> activeCustomerBookings = bookingRepository.findActiveBookingsByCustomerId(
+                userId, UserService.ACTIVE_CUSTOMER_STATUSES);
+        if (!activeCustomerBookings.isEmpty()) {
+            Booking existing = activeCustomerBookings.get(0);
+            throw new ConflictException(
+                    "Người dùng đang có đơn cứu hộ chưa hoàn tất với vai trò khách hàng",
+                    existing.getId(),
+                    existing.getStatus().name()
+            );
+        }
+
+        providerProfileRepository.findByUserId(userId).ifPresent(providerProfile -> {
+            List<Booking> activeProviderBookings = bookingRepository.findActiveBookingsByProviderId(
+                    providerProfile.getId(), UserService.ACTIVE_PROVIDER_STATUSES);
+            if (!activeProviderBookings.isEmpty()) {
+                Booking existing = activeProviderBookings.get(0);
+                throw new ConflictException(
+                        "Người dùng đang có đơn cứu hộ chưa hoàn tất với vai trò thợ sửa xe",
+                        existing.getId(),
+                        existing.getStatus().name()
+                );
+            }
+        });
+
+        // 4. Lưu bản chụp thông tin xe và địa chỉ cứu hộ cùng đơn
         var booking = bookingMapper.toBooking(request);
         booking.setCustomer(user);
+        booking.setStatus(BookingStatus.SEARCHING);
+        booking.setAddress(request.address());
+        booking.setVehicleBrand(request.vehicleBrand());
+        booking.setVehicleModel(request.vehicleModel());
+        booking.setVehicleLicensePlate(request.vehicleLicensePlate());
 
         if (request.media() != null) {
             request.media().forEach(item -> {
@@ -78,11 +130,10 @@ public class BookingService {
 
         var saved = bookingRepository.save(booking);
 
-        // Tìm top N provider gần nhất
+        // 5. Tìm top N provider gần nhất và phát offer trong cùng giao dịch
         List<NearbyProviderView> providers = providerProfileRepository.findNearby(
                 request.latitude(), request.longitude(), searchRadiusM, maxProviders);
 
-        // Tạo offer PENDING cho từng provider, trỏ vào booking đã lưu
         LocalDateTime expiresAt = LocalDateTime.now().plus(offerTtl);
 
         List<BookingOffer> offers = providers.stream().map(p -> {
@@ -98,6 +149,55 @@ public class BookingService {
         bookingOfferRepository.saveAll(offers);
 
         return bookingMapper.toBookingResponse(saved);
+    }
+
+    /**
+     * Đọc thông tin đơn cứu hộ đang mở (active booking) của người dùng ở một trong hai vai (Khách hoặc Thợ).
+     * Phục vụ khôi phục trạng thái màn hình sau F5 / tải lại trang.
+     */
+    @Transactional(readOnly = true)
+    public BookingResponse getActiveBooking(UUID userId) {
+        // 1. Kiểm tra đơn mở ở vai khách hàng
+        List<Booking> customerBookings = bookingRepository.findActiveBookingsByCustomerId(
+                userId, UserService.ACTIVE_CUSTOMER_STATUSES);
+        if (!customerBookings.isEmpty()) {
+            return bookingMapper.toBookingResponse(customerBookings.get(0));
+        }
+
+        // 2. Kiểm tra đơn mở ở vai thợ
+        var profileOpt = providerProfileRepository.findByUserId(userId);
+        if (profileOpt.isPresent()) {
+            List<Booking> providerBookings = bookingRepository.findActiveBookingsByProviderId(
+                    profileOpt.get().getId(), UserService.ACTIVE_PROVIDER_STATUSES);
+            if (!providerBookings.isEmpty()) {
+                return bookingMapper.toBookingResponse(providerBookings.get(0));
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Xem chi tiết một đơn cứu hộ theo ID.
+     * Quyền xem: Khách hàng tạo đơn, Thợ được phân công cho đơn, hoặc ADMIN.
+     */
+    @Transactional(readOnly = true)
+    public BookingResponse getBookingById(UUID bookingId, User user) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found: " + bookingId));
+
+        boolean isCustomer = booking.getCustomer() != null && booking.getCustomer().getId().equals(user.getId());
+        boolean isAssignedProvider = booking.getProvider() != null &&
+                booking.getProvider().getUser() != null &&
+                booking.getProvider().getUser().getId().equals(user.getId());
+        boolean isAdmin = user.getRoles() != null &&
+                user.getRoles().stream().anyMatch(r -> "ADMIN".equalsIgnoreCase(r.getName()));
+
+        if (!isCustomer && !isAssignedProvider && !isAdmin) {
+            throw new AccessDeniedException("You do not have permission to view this booking");
+        }
+
+        return bookingMapper.toBookingResponse(booking);
     }
 
     // Lấy danh sách offer Accepted

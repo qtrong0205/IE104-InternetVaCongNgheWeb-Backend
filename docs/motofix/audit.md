@@ -85,10 +85,10 @@ Kết quả:
 | **Admin: Duyệt thợ** | Nhóm 03, TC-03-28..31; `ProviderProfileWorkflowTests` | `PATCH /api/admin/providers/{id}/approve` | `AdminProviderController:approveProvider` | [ĐẠT / TESTED] | Cấp role `PROVIDER`, chuyển `APPROVED`. **Chuẩn hóa:** giữ `isActive = false` sau khi duyệt. Có khóa bi quan `PESSIMISTIC_WRITE` chống 2 Admin duyệt cùng lúc. | **BE02 (Xong)** |
 | **Admin: Từ chối thợ** | Nhóm 03, TC-03-32..35; `ProviderProfileWorkflowTests` | `PATCH /api/admin/providers/{id}/reject` | `AdminProviderController:rejectProvider` | [ĐẠT / TESTED] | Validate bắt buộc lý do từ chối không được để trống (trả `400 Bad Request`). Giữ `isActive = false`. Khóa bi quan chống xung đột. | **BE02 (Xong)** |
 | **Khách: Xem hồ sơ thợ công khai** | Nhóm 03, TC-03-36..38; `ProviderProfileWorkflowTests` | `GET /api/providers/{providerId}` | `ProviderController:getPublicProfile` | [ĐẠT / TESTED] | Endpoint công khai trả `PublicProviderProfileResponse` (tên, address, rating, baseLat/Lng). Ẩn hoàn toàn giấy tờ CCCD/GPKD. Trả `404` nếu thợ chưa duyệt. | **BE02 (Xong)** |
-| **Upload ảnh/video sự cố** | Nhóm 04, TC-04-01..05 | `POST /api/media` | `MediaController:upload` | Có mã gọi SupabaseStorageService | Chỉ có mã và upload test; chưa có test tích hợp kiểm tra giới hạn 5 MiB ảnh / 50 MiB video / tổng tối đa 10 tệp. | **BE03** |
-| **Khách: Tạo yêu cầu cứu hộ** | Nhóm 04, TC-04-06..12 | `POST /api/bookings` | `BookingController:createBooking` | Có mã gọi phân phối 5 km | **Lệch & Thiếu:** `CreateBookingRequest` và entity `Booking` thiếu lưu thông tin xe (`vehicleBrand`, `vehicleModel`, `vehicleLicensePlate`) và địa chỉ điểm cứu hộ dạng chữ (`address`); thiếu chặn 1 khách không được mở 2 booking đồng thời. | **BE03** |
-| **Khách/Thợ: Đọc đơn đang active** | Nhóm 04, 06, 10; V6 `activeBooking` | `GET /api/bookings/active` *(hoặc mở rộng GET)* | *Chưa có mapping* | Không có endpoint đọc đơn active | **Thiếu hoàn toàn**. Hiện chỉ có `GET /api/bookings` lọc theo COMPLETED/CANCELLED, khi F5 trình duyệt không thể khôi phục đơn đang chạy (`SEARCHING`..`WAITING_PAYMENT`). | **BE03** |
-| **Khách: Theo dõi chi tiết 1 đơn** | Nhóm 06, TC-06-01..05 | `GET /api/bookings/{id}` | *Chưa có mapping* | Không tìm thấy trong controller | **Thiếu hoàn toàn**. Cần có endpoint xem chi tiết trạng thái, thông tin xe, thợ, địa chỉ, mốc thời gian của booking. | **BE03** |
+| **Upload ảnh/video sự cố** | Nhóm 04, TC-04-01..05; `BookingManagementWorkflowTests` | `POST /api/media` | `MediaController:upload` | [ĐẠT / TESTED] | Đã kiểm thử giới hạn 5 MiB ảnh / 50 MiB video / tối đa 10 tệp. Lỗi trả về chuẩn `400 Bad Request`. | **BE03 (Xong)** |
+| **Khách: Tạo yêu cầu cứu hộ** | Nhóm 04, TC-04-06..12; `BookingManagementWorkflowTests` | `POST /api/bookings` | `BookingController:createBooking` | [ĐẠT / TESTED] | Lưu snapshot xe (`brand`, `model`, `plate`) và `address` đã xác nhận. Khóa `PESSIMISTIC_WRITE` trên User chống 2 tab mở 2 đơn đồng thời. Quét và phát offer trong 5 km. | **BE03 (Xong)** |
+| **Khách/Thợ: Đọc đơn đang active** | Nhóm 04, 06, 10; V6 `activeBooking`; `BookingManagementWorkflowTests` | `GET /api/bookings/active` | `BookingController:getActiveBooking` | [ĐẠT / TESTED] | Trả về chi tiết đơn đang mở (`SEARCHING`..`WAITING_PAYMENT`) cho Khách hoặc Thợ để khôi phục bước giao diện sau F5. Trả `204 No Content` khi không có đơn. | **BE03 (Xong)** |
+| **Khách: Theo dõi chi tiết 1 đơn** | Nhóm 06, TC-06-01..05, 08; `BookingManagementWorkflowTests` | `GET /api/bookings/{id}` | `BookingController:getBookingById` | [ĐẠT / TESTED] | Trả toàn bộ thông tin đơn, địa chỉ, snapshot xe. Phân quyền chặt chẽ: chỉ chủ đơn, thợ được phân công hoặc Admin được xem; người lạ bị chặn `403 Forbidden`. | **BE03 (Xong)** |
 | **Thợ: Xem danh sách offer chờ** | Nhóm 05, TC-05-01..05 | `GET /api/providers/incoming-offers` | `ProviderController:getIncomingOffers` | Có mã lọc offer PENDING | Chỉ trả offer `PENDING` còn hạn; V6 yêu cầu xem cả offer đã đồng ý đang chờ khách chọn (`ACCEPTED`). | **BE04** |
 | **Thợ: Xem chi tiết 1 offer** | Nhóm 05, TC-05-06..08 | `GET /api/providers/incoming-offers/{offerId}` | *Chưa có mapping* | Không tìm thấy trong controller | **Thiếu hoàn toàn**. Thợ bấm xem chi tiết sự cố, ảnh/video trước khi quyết định nhận/từ chối. | **BE04** |
 | **Thợ: Đồng ý offer** | Nhóm 05, TC-05-09..14 | `POST /api/bookings/{offerId}/offer/accept` | `BookingController:acceptOffer` | Có mã ghi nhận estimated_*, note | Chưa kiểm tra thợ có đang bận đơn khác không; chưa có test riêng cho endpoint này (mới test gián tiếp qua flow). | **BE04** |
@@ -246,11 +246,14 @@ BE00 (Audit & Baseline) -> BE01 (Tài khoản & Phân quyền) -> BE02 (Hồ sơ
   - Khóa bi quan (`PESSIMISTIC_WRITE`) trên hồ sơ thợ chống xung đột khi 2 Admin duyệt/từ chối đồng thời.
   - Bổ sung API công khai `GET /api/providers/{providerId}`: ẩn hoàn toàn giấy tờ CCCD/GPKD, trả `404` nếu chưa duyệt.
   - Truy vấn PostGIS `findNearby`: bổ sung fallback tính geography từ `base_lng`/`base_lat` khi cột `location` null và áp dụng giới hạn bán kính dịch vụ `service_radius_km` của thợ.
-- **BE03 · Tạo booking, Xe snapshot, Điểm cứu hộ & Quản lý đơn active:**
-  - Bổ sung snapshot xe và `address` điểm cứu hộ vào `Booking`.
-  - Chặn 1 khách không mở 2 booking đồng thời.
-  - Bổ sung API đọc đơn active: `GET /api/bookings/active`.
-  - Bổ sung API xem chi tiết đơn: `GET /api/bookings/{id}`.
+- **BE03 · Tạo booking, Xe snapshot, Điểm cứu hộ & Quản lý đơn active (ĐÃ HOÀN THÀNH):**
+  - Bổ sung snapshot xe (`vehicle_brand`, `vehicle_model`, `vehicle_license_plate`) và `address` điểm cứu hộ vào `Booking` Entity và DTOs.
+  - Sửa hoặc xóa xe trong danh mục cá nhân (`customer_vehicles`) hoàn toàn độc lập, không làm thay đổi thông tin snapshot trên đơn và lịch sử.
+  - Giới hạn tối đa một đơn mở qua cả hai vai; khóa bi quan hàng User chống xung đột khi 2 tab mở 2 đơn đồng thời.
+  - Từ chối `400 Bad Request` khi thiếu `address`, tọa độ ngoài phạm vi hợp lệ `[-90, 90]` hoặc `[-180, 180]`, hoặc gửi tệp thứ 11 (> 10 media).
+  - Kiểm soát dung lượng upload: ảnh ≤ 5 MiB, video ≤ 50 MiB, tối đa 10 tệp/lần.
+  - Bổ sung API đọc đơn active: `GET /api/bookings/active` phục vụ khôi phục giao diện sau F5 (trả `204 No Content` khi không có đơn mở).
+  - Bổ sung API xem chi tiết đơn: `GET /api/bookings/{id}` với phân quyền chặt chẽ (chỉ chủ đơn, thợ được giao, Admin; người lạ bị chặn `403 Forbidden`).
 - **BE04 · Phân phối offer, Chọn thợ & Cơ chế tìm lại:**
   - Đổi tên trạng thái chọn thợ thành `SELECTED_PROVIDER` (chuẩn hóa tương thích ngược).
   - Triển khai API tìm lại đa lượt: `POST /api/bookings/{id}/search-rounds`.
@@ -306,3 +309,42 @@ BE00 (Audit & Baseline) -> BE01 (Tài khoản & Phân quyền) -> BE02 (Hồ sơ
     *Giải pháp:* Cập nhật native query `findNearby` dùng `COALESCE(p.location, ST_SetSRID(ST_MakePoint(p.base_lng, p.base_lat), 4326)::geography)` làm fallback an toàn.
   - *Trở ngại 3:* Test case tích hợp cũ `testIntegratedBusinessFlow_FullLifecycle` kỳ vọng `isActive = true` ngay sau khi Admin duyệt.
     *Giải pháp:* Cập nhật assertion thành `assertFalse(approvedAgain.isActive())` khớp với quyết định đặc tả Nhóm 03/11 (duyệt xong thợ vẫn offline cho đến khi chủ động bật nhận việc).
+
+---
+
+## 9. Biên bản bàn giao đợt BE03 · Tạo và đọc booking, xe, media
+
+- **Thời điểm nghiệm thu:** 2026-11-22
+- **Trạng thái:** Hoàn tất trọn vẹn mọi yêu cầu của BE03.
+- **Kết quả kiểm thử:**
+  - `BookingManagementWorkflowTests`: **11/11 test cases PASS (100%)**.
+  - Toàn bộ test suite repository: **179/179 test cases PASS (100% không suy thoái)**.
+  - Lệnh kiểm tra thực tế:
+    - `.\mvnw.cmd test -Dtest=BookingManagementWorkflowTests`
+    - `.\mvnw.cmd test`
+- **Các ca kiểm thử đã xác thực trong BE03 (`BookingManagementWorkflowTests`):**
+  1. `testCreateBooking_SuccessWithVehicleSnapshotAndAddress`: Tạo booking thành công với snapshot xe (`brand`, `model`, `licensePlate`), `address` đã xác nhận, tọa độ GPS; phát sinh các offer lượt 1 trong bán kính 5 km.
+  2. `testCreateBooking_MissingAddress_RejectedWithBadRequest` (LOC-06): Thiếu địa chỉ cứu hộ (`null` hoặc khoảng trắng) bị từ chối `400 Bad Request`.
+  3. `testCreateBooking_InvalidCoordinates_RejectedWithBadRequest` (LOC-06): Tọa độ ngoài phạm vi hợp lệ (`latitude` ngoài `[-90, 90]`, `longitude` ngoài `[-180, 180]`) bị từ chối `400 Bad Request`.
+  4. `testCreateBooking_MediaOver10Files_RejectedWithBadRequest` (04-08): Gửi quá 10 media (tệp thứ 11) bị từ chối `400 Bad Request`.
+  5. `testMediaUpload_Validation_SizeAndFileCountAndFormat` (04-04, 04-08): Upload ảnh > 5 MiB, video > 50 MiB, quá 10 tệp/lần, hoặc tệp sai định dạng (.exe) đều bị từ chối chuẩn `400 Bad Request`.
+  6. `testConcurrentBookingCreation_TwoTabs_OnlyOneSucceeds` (04-05): Hai tab tạo đơn đồng thời cho cùng một tài khoản; khóa bi quan hàng User đảm bảo đúng 1 đơn được tạo, tab còn lại nhận `409 Conflict`.
+  7. `testSingleActiveBooking_BlockedWhenActiveInOtherRole`: Người dùng đang có công việc dở dang ở vai thợ (`IN_PROGRESS`) thì không được mở booking mới ở vai khách (`409 Conflict`).
+  8. `testVehicleEditOrDelete_DoesNotChangeBookingSnapshotHistory`: Sửa thông tin hoặc xóa xe trong danh mục cá nhân (`customer_vehicles`) không làm thay đổi thông tin xe đã chụp trên đơn cứu hộ và trong lịch sử.
+  9. `testGetActiveBooking_F5Recovery_CustomerAndProvider`: Đọc đơn đang mở qua `GET /api/bookings/active` cho cả Khách (`SEARCHING`) và Thợ (`PROVIDER_EN_ROUTE`) để khôi phục bước giao diện sau F5; trả `204 No Content` khi không có đơn.
+  10. `testGetBookingById_AccessControl` (06-08): Xem chi tiết đơn qua `GET /api/bookings/{id}`: cho phép chủ đơn, thợ được giao, Admin; người lạ bị chặn `403 Forbidden`; ID không tồn tại trả `404 Not Found`.
+  11. `testLegacyBooking_NullAddressAndVehicle_ReadsSafely`: Đơn cứu hộ cũ trong cơ sở dữ liệu thiếu địa chỉ hoặc xe snapshot vẫn đọc an toàn không phát sinh lỗi.
+- **Tập tin đã thay đổi & tạo mới:**
+  - `src/main/java/com/nhom6/motofix/entity/Booking.java`: Bổ sung `@Column address`, `vehicle_brand`, `vehicle_model`, `vehicle_license_plate`.
+  - `src/main/java/com/nhom6/motofix/dto/request/CreateBookingRequest.java`: Bổ sung các trường xe, địa chỉ, validation; hỗ trợ constructor nạp chồng 4 tham số tương thích ngược.
+  - `src/main/java/com/nhom6/motofix/dto/respond/BookingResponse.java`: Bổ sung `address`, `vehicleBrand`, `vehicleModel`, `vehicleLicensePlate`; hỗ trợ constructor 11 tham số tương thích ngược.
+  - `src/main/java/com/nhom6/motofix/repository/UserRepository.java`: Bổ sung `findByIdWithLock(UUID id)` với `@Lock(LockModeType.PESSIMISTIC_WRITE)`.
+  - `src/main/java/com/nhom6/motofix/exception/GlobalExceptionHandler.java`: Bổ sung xử lý `IllegalArgumentException` và `MaxUploadSizeExceededException` trả về chuẩn `400 Bad Request`.
+  - `src/main/java/com/nhom6/motofix/service/BookingService.java`: Bổ sung khóa bi quan chống race condition 2 tab, kiểm tra đơn active 2 vai, lưu xe snapshot và địa chỉ, bổ sung `getActiveBooking` và `getBookingById`.
+  - `src/main/java/com/nhom6/motofix/controller/BookingController.java`: Bổ sung endpoint `GET /api/bookings/active` và `GET /api/bookings/{id}`.
+  - `src/test/java/com/nhom6/motofix/BookingManagementWorkflowTests.java` *(Mới)*: Bộ test 11 ca kiểm thử chuyên sâu cho toàn bộ yêu cầu của đợt BE03.
+- **Trở ngại & Giải pháp:**
+  - *Trở ngại 1:* Tranh chấp race condition khi mở hai tab trình duyệt tạo đơn cùng lúc khiến hai giao dịch độc lập đều thấy 0 đơn active và cùng tạo ra hai đơn mở.
+    *Giải pháp:* Dùng khóa bi quan hàng User `userRepository.findByIdWithLock(userId)` ở đầu phương thức `createBooking`. Giao dịch thứ hai phải chờ giao dịch thứ nhất hoàn tất và thấy đơn vừa tạo, từ đó từ chối `409 Conflict`.
+  - *Trở ngại 2:* `SupabaseStorageService` ném `IllegalArgumentException` khi file vượt kích thước hoặc sai định dạng nhưng trước đó chưa có `@ExceptionHandler` tương ứng, dẫn tới mã lỗi mặc định `500 Internal Server Error`.
+    *Giải pháp:* Thêm `@ExceptionHandler(IllegalArgumentException.class)` và `MaxUploadSizeExceededException` vào `GlobalExceptionHandler` trả về chuẩn `400 Bad Request`.
