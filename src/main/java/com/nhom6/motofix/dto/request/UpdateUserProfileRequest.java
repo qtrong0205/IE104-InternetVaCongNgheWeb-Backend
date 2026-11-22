@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Size;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record UpdateUserProfileRequest(
-        @JsonAlias({"full_name", "fullName"})
+        @JsonAlias({"full_name", "fullName", "name"})
         @Size(max = 100, message = "Full name must not exceed 100 characters")
         String fullName,
 
@@ -16,7 +16,12 @@ public record UpdateUserProfileRequest(
 
         @JsonAlias({"avatar_url", "avatarUrl", "avatar"})
         @Size(max = 500, message = "Avatar URL must not exceed 500 characters")
-        String avatarUrl
-) {
-}
+        String avatarUrl,
 
+        @JsonAlias({"gender"})
+        String gender
+) {
+    public UpdateUserProfileRequest(String fullName, String phone, String avatarUrl) {
+        this(fullName, phone, avatarUrl, null);
+    }
+}

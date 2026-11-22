@@ -1,6 +1,7 @@
 package com.nhom6.motofix.repository;
 
 import com.nhom6.motofix.entity.BookingOffer;
+import com.nhom6.motofix.enums.BookingStatus;
 import com.nhom6.motofix.enums.OfferStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -8,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -61,4 +63,17 @@ public interface BookingOfferRepository extends JpaRepository<BookingOffer, UUID
     int expireOffers(@Param("from") OfferStatus from,
                      @Param("to") OfferStatus to,
                      @Param("now") LocalDateTime now);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+        UPDATE BookingOffer o SET o.status = :expiredStatus
+        WHERE o.provider.id = :providerId
+          AND o.status IN (:activeOfferStatuses)
+          AND o.booking.id IN (SELECT b.id FROM Booking b WHERE b.status = :searchingStatus)
+        """)
+    int expireOffersForProvider(
+            @Param("providerId") UUID providerId,
+            @Param("expiredStatus") OfferStatus expiredStatus,
+            @Param("activeOfferStatuses") Collection<OfferStatus> activeOfferStatuses,
+            @Param("searchingStatus") BookingStatus searchingStatus);
 }

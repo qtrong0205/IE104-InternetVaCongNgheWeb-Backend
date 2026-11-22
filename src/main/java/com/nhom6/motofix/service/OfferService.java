@@ -55,6 +55,10 @@ public class OfferService {
 
     // Dùng chung cho accept và reject
     private BookingOffer loadRespondableOffer(UUID offerId, User user) {
+        if (user.getCurrentRole() != null && "CUSTOMER".equalsIgnoreCase(user.getCurrentRole())) {
+            throw new org.springframework.security.access.AccessDeniedException("Tài khoản hiện đang ở vai trò khách hàng, không thể thực hiện thao tác của thợ");
+        }
+
         var provider = providerProfileRepository.findByUserId(user.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("User not yet a provider"));
 

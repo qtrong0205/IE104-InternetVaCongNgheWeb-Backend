@@ -63,6 +63,7 @@ public class BookingController {
     }
 
     @PostMapping("/{offerId}/offer/accept")
+    @PreAuthorize("hasRole('PROVIDER')")
     public ResponseEntity<OfferResultResponse> acceptOffer(
             @PathVariable UUID offerId,
             @Valid @RequestBody AcceptOfferRequest request,
@@ -74,6 +75,7 @@ public class BookingController {
     }
 
     @PostMapping("/{offerId}/offer/reject")
+    @PreAuthorize("hasRole('PROVIDER')")
     public ResponseEntity<OfferResultResponse> rejectOffer(
             @PathVariable UUID offerId,
             @Valid @RequestBody DeclineOfferRequest request,

@@ -1,5 +1,6 @@
 package com.nhom6.motofix.entity;
 
+import com.nhom6.motofix.enums.Gender;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -35,6 +36,22 @@ public class User {
     @Column(name = "avatar_url", length = 500)
     private String avatarUrl;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gender", length = 20)
+    private Gender gender;
+
+    @Column(name = "\"current_role\"", length = 30)
+    private String currentRole;
+
+    @Column(name = "token_version")
+    private Integer tokenVersion = 0;
+
+    @Column(name = "password_reset_token", length = 100)
+    private String passwordResetToken;
+
+    @Column(name = "password_reset_token_expiry")
+    private LocalDateTime passwordResetTokenExpiry;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -63,12 +80,13 @@ public class User {
         LocalDateTime now = LocalDateTime.now();
         createdAt = now;
         updatedAt = now;
+        if (tokenVersion == null) {
+            tokenVersion = 0;
+        }
     }
 
     @PreUpdate
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
-
-
 }

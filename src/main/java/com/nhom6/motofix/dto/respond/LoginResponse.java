@@ -14,7 +14,12 @@ public record LoginResponse<UserInfo>(
             UUID id,
             String fullName,
             String email,
-            Set<String> roles
+            Set<String> roles,
+            String currentRole,
+            String gender
     ) {
+        public UserInfo(UUID id, String fullName, String email, Set<String> roles) {
+            this(id, fullName, email, roles, null, null);
+        }
     }
 }

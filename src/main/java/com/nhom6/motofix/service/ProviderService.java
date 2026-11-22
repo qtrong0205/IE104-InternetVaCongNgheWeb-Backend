@@ -149,6 +149,10 @@ public class ProviderService {
         ProviderProfile provider = providerProfileRepository.findByUserIdWithLock(user.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Hồ sơ thợ không tồn tại"));
 
+        if (user.getCurrentRole() != null && "CUSTOMER".equalsIgnoreCase(user.getCurrentRole())) {
+            throw new org.springframework.security.access.AccessDeniedException("Tài khoản hiện đang ở vai trò khách hàng, không thể thực hiện thao tác của thợ");
+        }
+
         boolean requestedActive = Boolean.TRUE.equals(request.isActive());
 
         if (requestedActive) {

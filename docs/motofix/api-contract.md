@@ -1,6 +1,6 @@
 # MotoFix Backend · Hợp đồng API (API Contract)
 
-> **Phiên bản tài liệu:** 1.0.0 (Đợt BE00 Audit Baseline)  
+> **Phiên bản tài liệu:** 1.1.0 (Hoàn thành đợt BE01 · Tài khoản, vai hiện tại và phiên)  
 > **Phiên bản mã nguồn cơ sở (Git commit):** `9509449983f02cf2215cfd8b3b867f0a6f924359` (Branch: `main`)  
 > **Hệ thống:** Java 17 / Spring Boot 4.1.1 / PostgreSQL 17.6 PostGIS / Supabase Storage  
 
@@ -12,13 +12,13 @@
 - `200 OK`: Truy vấn hoặc cập nhật trạng thái thành công.
 - `201 CREATED`: Tạo mới tài nguyên thành công (`register`, `vehicles`, `bookings`, `quotes`, `review`).
 - `400 BAD REQUEST`: Dữ liệu đầu vào không hợp lệ, vi phạm ràng buộc validation (Bean Validation), hoặc logic nghiệp vụ không thỏa mãn (ví dụ thợ bật nhận đơn khi chưa duyệt).
-- `401 UNAUTHORIZED`: Chưa xác thực, token JWT thiếu/hết hạn/không hợp lệ, hoặc tài khoản bị khóa.
-- `403 FORBIDDEN`: Không có quyền truy cập (sai vai trò hoặc không phải chủ sở hữu tài nguyên).
+- `401 UNAUTHORIZED`: Chưa xác thực, token JWT thiếu/hết hạn/không hợp lệ, tokenVersion không khớp (đã logout), hoặc tài khoản bị khóa.
+- `403 FORBIDDEN`: Không có quyền truy cập (sai vai trò, không phải chủ sở hữu tài nguyên, hoặc tab vai cũ bị chặn sau khi chuyển vai).
 - `404 NOT FOUND`: Không tìm thấy tài nguyên theo ID cung cấp.
-- `409 CONFLICT`: Xung đột trạng thái nghiệp vụ (ví dụ: booking không ở trạng thái hợp lệ để gọi API, vi phạm số lượng quote PENDING/ACCEPTED, đơn đã được thanh toán hoặc đã hủy).
+- `409 CONFLICT`: Xung đột trạng thái nghiệp vụ (chặn đăng xuất/chuyển vai khi có đơn active kèm `bookingId` và `bookingStatus`; booking không ở trạng thái hợp lệ để gọi API; vi phạm số lượng quote PENDING/ACCEPTED; đơn đã thanh toán/đã hủy).
 
 ### 1.2. Phân loại trạng thái API trong hợp đồng
-- `[ĐÃ KIỂM THỬ]`: Endpoint đã có trong mã nguồn và đã có test tự động kiểm thử các nhánh hành vi trong test suite.
+- `[ĐÃ KIỂM THỬ]`: Endpoint đã có trong mã nguồn và đã có test tự động kiểm thử toàn diện các nhánh hành vi trong test suite (đáp ứng trọn vẹn assertions).
 - `[CHỈ THẤY TRONG MÃ]`: Endpoint đã khai báo mapping trong controller nhưng chưa có bộ test kiểm thử độc lập hoặc thiếu assertion nghiệp vụ.
 - `[ĐỀ XUẤT / CẦN BỔ SUNG]`: Endpoint cần triển khai trong các đợt tiếp theo để đáp ứng đặc tả và luồng UI V6.
 
@@ -45,11 +45,12 @@
     "fullName": "Nguyen Van A",
     "email": "customer@motofix.vn",
     "phone": "0901234567",
-    "roles": ["USER"]
+    "roles": ["CUSTOMER"],
+    "currentRole": "CUSTOMER"
   }
   ```
 - **Lỗi tiêu biểu:** `400 Bad Request` (Email/số điện thoại đã tồn tại, định dạng không đúng).
-- **Hiện trạng:** Đang cấp role `USER`. Đợt BE01 sẽ chuẩn hóa role `CUSTOMER`.
+- **Hiện trạng:** Đã chuẩn hóa cấp role `CUSTOMER` (và ánh xạ tương thích ngược quyền `USER`). Khởi tạo `currentRole = CUSTOMER`.
 - **Mã nguồn:** `AuthController.java:register` → `AuthService.java:register`.
 
 ### 2.2. Đăng nhập `[ĐÃ KIỂM THỬ]`
@@ -70,13 +71,15 @@
     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
     "email": "customer@motofix.vn",
     "fullName": "Nguyen Van A",
-    "roles": ["CUSTOMER"]
+    "roles": ["CUSTOMER"],
+    "currentRole": "CUSTOMER",
+    "gender": "MALE"
   }
   ```
 - **Lỗi tiêu biểu:** `401 Unauthorized` (Sai tài khoản/mật khẩu, tài khoản bị khóa `status != active`).
-- **Hành vi bổ sung (BE01):** Trả thêm trường `currentRole` để giao diện khôi phục đúng chế độ khách hoặc thợ.
+- **Hành vi (BE01):** Phục hồi `currentRole` đã lưu của người dùng; token JWT mang claim `currentRole` và `tokenVersion`.
 
-### 2.3. Đăng xuất `[LỆCH - CẦN ĐIỀU CHỈNH]`
+### 2.3. Đăng xuất `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `POST /api/auth/logout`
 - **Role:** Người dùng đã xác thực (Mọi role)
 - **Điều kiện trạng thái:** Không có đơn active ở cả 2 vai (`SEARCHING` .. `WAITING_PAYMENT`).
@@ -84,16 +87,27 @@
 - **Response:** `200 OK`
   ```json
   {
-    "message": "Đăng xuất thành công"
+    "message": "Logged out successfully"
   }
   ```
-- **Lỗi tiêu biểu:** `409 Conflict` (Chặn đăng xuất khi đang có đơn cứu hộ chưa kết thúc, trả về thông tin để UI dẫn đến đơn hiện tại).
-- **Hành vi mới (BE01):** Nếu là thợ, tự động cập nhật `is_active = false` và chuyển các offer `PENDING`/`ACCEPTED` của thợ trên các đơn `SEARCHING` sang `EXPIRED`.
+- **Lỗi tiêu biểu:** `409 Conflict` (Chặn đăng xuất khi đang có đơn cứu hộ chưa kết thúc, trả về `bookingId` và `bookingStatus` để UI điều hướng trực tiếp về đơn).
+  ```json
+  {
+    "code": "ACTIVE_BOOKING_CONFLICT",
+    "message": "Không thể đăng xuất khi đang có đơn cứu hộ chưa hoàn tất",
+    "bookingId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "bookingStatus": "WAITING_PAYMENT"
+  }
+  ```
+- **Hành vi mới (BE01):**
+  - Nếu người dùng có hồ sơ thợ: tự động cập nhật `is_active = false` (offline) và chuyển các offer `PENDING`/`ACCEPTED` của thợ trên các đơn `SEARCHING` sang `EXPIRED` trong cùng giao dịch.
+  - Vô hiệu hóa phiên hiện tại: tăng `tokenVersion` trên User, chặn việc tái sử dụng token cũ (như tab cũ cố bật nhận việc lại sẽ nhận `401 Unauthorized` / `403 Forbidden`).
+  - Xóa `SecurityContextHolder`.
 - **Mã nguồn:** `AuthController.java:logout` → `AuthService.java:logout`.
 
-### 2.4. Quên mật khẩu `[ĐỀ XUẤT / CẦN BỔ SUNG]`
+### 2.4. Quên mật khẩu qua email `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `POST /api/auth/forgot-password`
-- **Role:** Công khai (Anonymous)
+- **Role:** Công khai (Anonymous - gọi từ màn hình login)
 - **Request Body:**
   ```json
   {
@@ -103,11 +117,32 @@
 - **Response:** `200 OK`
   ```json
   {
-    "message": "Hướng dẫn đặt lại mật khẩu đã được gửi đến email nếu tài khoản tồn tại"
+    "message": "Mã xác nhận khôi phục mật khẩu đã được gửi đến email của bạn"
   }
   ```
+- **Lỗi tiêu biểu:** `404 Not Found` (Email không tồn tại), `401 Unauthorized` (Tài khoản bị khóa).
+- **Hiện trạng kiểm thử:** Sử dụng test double `MockEmailService` (ghi nhận mã reset token in-memory và log, không gửi SMTP thật ra ngoài để tránh phụ thuộc mạng).
 
-### 2.5. Đổi mật khẩu trong phiên `[ĐÃ KIỂM THỬ]`
+### 2.5. Đặt lại mật khẩu bằng mã token `[ĐÃ KIỂM THỬ]`
+- **Method & Path:** `POST /api/auth/reset-password-with-token`
+- **Role:** Công khai (Anonymous - trang xác thực mã từ email)
+- **Request Body:**
+  ```json
+  {
+    "token": "4a123f89-76ef-4612-9c32-15f5c345a123",
+    "newPassword": "NewPassword456@",
+    "confirmPassword": "NewPassword456@"
+  }
+  ```
+- **Response:** `200 OK`
+  ```json
+  {
+    "message": "Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại."
+  }
+  ```
+- **Lỗi tiêu biểu:** `400 Bad Request` (Token không hợp lệ hoặc đã hết hạn 15 phút, mật khẩu xác nhận không khớp).
+
+### 2.6. Đổi mật khẩu trong phiên `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `POST /api/auth/reset-password`
 - **Role:** Người dùng đã xác thực
 - **Request Body:**
@@ -126,29 +161,35 @@
   ```
 - **Lỗi tiêu biểu:** `400 Bad Request` (Mật khẩu cũ không đúng, xác nhận mật khẩu không khớp, mật khẩu mới trùng mật khẩu cũ).
 
-### 2.6. Chuyển vai trò người dùng `[ĐỀ XUẤT / CẦN BỔ SUNG]`
+### 2.7. Chuyển vai trò người dùng `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `PATCH /api/users/me/current-role`
 - **Role:** Người dùng đã xác thực (CUSTOMER hoặc PROVIDER)
-- **Điều kiện trạng thái:** Người dùng phải sở hữu quyền tương ứng (muốn sang PROVIDER thì hồ sơ thợ phải đã APPROVED); không có đơn active ở cả 2 vai.
+- **Điều kiện trạng thái:** Người dùng phải sở hữu quyền tương ứng (muốn sang `PROVIDER` thì hồ sơ thợ phải đã `APPROVED`); không có đơn active ở cả 2 vai (`SEARCHING` .. `WAITING_PAYMENT`).
 - **Request Body:**
   ```json
   {
     "targetRole": "PROVIDER"
   }
   ```
+  *(Chấp nhận alias `target_role` hoặc `role`)*
 - **Response:** `200 OK`
   ```json
   {
     "currentRole": "PROVIDER",
-    "message": "Chuyển vai thành công"
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "message": "Chuyển vai trò thành công"
   }
   ```
 - **Lỗi tiêu biểu:**
-  - `403 Forbidden`: Người dùng chưa được duyệt làm thợ hoặc không có quyền.
-  - `409 Conflict`: Còn đơn đang xử lý dở dang ở vai hiện tại hoặc vai đích.
-- **Hành vi mới (BE01):** Khi chuyển từ PROVIDER sang CUSTOMER, tự động set offline và expire offer chờ.
+  - `400 Bad Request`: Vai trò đích không hợp lệ hoặc tài khoản chưa được phê duyệt quyền thợ sửa xe.
+  - `409 Conflict`: Còn đơn đang xử lý dở dang ở vai hiện tại hoặc vai đích. Trả kèm `bookingId` và `bookingStatus` để UI đưa người dùng về đơn.
+- **Hành vi (BE01):**
+  - Khi rời vai thợ sang vai khách: tự động cập nhật `is_active = false` cho thợ và expire các offer `PENDING`/`ACCEPTED` của thợ trên booking `SEARCHING` trong cùng giao dịch. Khách hàng không thể chọn offer này nữa.
+  - Cập nhật `user.currentRole = targetRole`. Cấp JWT token mới mang role cập nhật.
+  - Chặn request từ tab vai cũ: khi user đang ở vai `CUSTOMER`, các thao tác nghiệp vụ thợ từ tab cũ (nhận việc, toggle active) bị chặn `403 Forbidden`.
+- **Mã nguồn:** `UserController.java:switchRole` → `UserService.java:switchRole`.
 
-### 2.7. Xem hồ sơ cá nhân `[ĐÃ KIỂM THỬ]`
+### 2.8. Xem hồ sơ cá nhân `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `GET /api/users/me`
 - **Role:** Người dùng đã xác thực
 - **Response:** `200 OK`
@@ -158,13 +199,15 @@
     "fullName": "Nguyen Van A",
     "email": "customer@motofix.vn",
     "phone": "0901234567",
+    "gender": "MALE",
+    "currentRole": "CUSTOMER",
     "avatarUrl": "https://...",
     "status": "active",
     "roles": ["CUSTOMER", "PROVIDER"]
   }
   ```
 
-### 2.8. Sửa hồ sơ cá nhân `[ĐÃ KIỂM THỬ]`
+### 2.9. Sửa hồ sơ cá nhân `[ĐÃ KIỂM THỬ]`
 - **Method & Path:** `PUT /api/users/me`
 - **Role:** Người dùng đã xác thực
 - **Request Body:**
@@ -172,7 +215,13 @@
   {
     "fullName": "Nguyen Van A",
     "phone": "0909998877",
+    "gender": "MALE",
     "avatarUrl": "https://..."
+  }
+  ```
+- **Quy tắc bất biến:** Trường `email` là chỉ đọc (read-only), nếu client gửi `email` trong body thì hệ thống tự động bỏ qua, không cho phép thay đổi email qua API này.
+- **Hỗ trợ giới tính:** Enum `Gender` chấp nhận: `MALE`, `FEMALE`, `OTHER` và các biến thể tiếng Việt không phân biệt hoa thường (`Nam`, `Nữ`, `Khác`).
+- **Response:** `200 OK` (Trả lại UserProfileResponse đầy đủ kèm `gender` và `currentRole`).
   }
   ```
 - **Response:** `200 OK`

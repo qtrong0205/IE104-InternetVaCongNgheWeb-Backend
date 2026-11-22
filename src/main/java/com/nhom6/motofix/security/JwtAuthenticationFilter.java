@@ -6,7 +6,6 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -37,9 +36,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         this.userRepository = userRepository;
     }
 
-    /**
-     * Hàm trích xuất Token từ Header, xác thực với CSDL và nạp thông tin User vào SecurityContext
-     */
     @Override
     protected void doFilterInternal(
             @NonNull HttpServletRequest request,
@@ -49,7 +45,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         final String authHeader = request.getHeader("Authorization");
 
-        // Bỏ qua nếu Header không có Token hoặc không đúng định dạng "Bearer "
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
@@ -60,45 +55,54 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             final String userId = jwtService.extractUserId(token);
 
-            // Chỉ xử lý nếu lấy được userId và người dùng chưa được xác thực trong phiên này
             if (userId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
                 User user = userRepository.findById(UUID.fromString(userId)).orElse(null);
 
-                // Kiểm tra User có tồn tại và Token có hợp lệ (đúng chữ ký & chưa hết hạn)
                 if (user != null && jwtService.isTokenValid(token, user)) {
 
-                    // Thêm tiền tố "ROLE_" vào tên Role để khớp với chuẩn phân quyền của Spring Security (ví dụ: USER -> ROLE_USER)
-                    // Hỗ trợ cả USER và CUSTOMER tương đương nhau theo requirement
+                    String currentRole = user.getCurrentRole();
                     List<SimpleGrantedAuthority> authorities = new ArrayList<>();
-                    for (var role : user.getRoles()) {
-                        String rName = role.getName();
-                        authorities.add(new SimpleGrantedAuthority("ROLE_" + rName));
-                        if ("USER".equalsIgnoreCase(rName)) {
-                            authorities.add(new SimpleGrantedAuthority("ROLE_CUSTOMER"));
-                        } else if ("CUSTOMER".equalsIgnoreCase(rName)) {
-                            authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
+
+                    if ("CUSTOMER".equalsIgnoreCase(currentRole)) {
+                        authorities.add(new SimpleGrantedAuthority("ROLE_CUSTOMER"));
+                        authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
+                    } else if ("PROVIDER".equalsIgnoreCase(currentRole)) {
+                        authorities.add(new SimpleGrantedAuthority("ROLE_PROVIDER"));
+                    } else {
+                        // Null hoặc chưa thiết lập: cấp theo roles gốc để tương thích ngược fixture cũ
+                        for (var role : user.getRoles()) {
+                            String rName = role.getName();
+                            authorities.add(new SimpleGrantedAuthority("ROLE_" + rName));
+                            if ("USER".equalsIgnoreCase(rName)) {
+                                authorities.add(new SimpleGrantedAuthority("ROLE_CUSTOMER"));
+                            } else if ("CUSTOMER".equalsIgnoreCase(rName)) {
+                                authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
+                            }
                         }
                     }
 
-                    // Khởi tạo đối tượng xác thực cho Spring Security
+                    // ADMIN luôn được giữ nếu user có role ADMIN
+                    for (var role : user.getRoles()) {
+                        if ("ADMIN".equalsIgnoreCase(role.getName())) {
+                            authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
+                        }
+                    }
+
                     var authentication = new UsernamePasswordAuthenticationToken(
                             user,
                             null,
                             authorities
                     );
 
-                    // Ghi nhận thêm thông tin từ Request (như địa chỉ IP)
                     authentication.setDetails(
                             new WebAuthenticationDetailsSource().buildDetails(request)
                     );
 
-                    // Nạp User đã xác thực vào SecurityContextHolder
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 }
             }
         } catch (Exception ignored) {
-            // Token bị lỗi/giả mạo/hết hạn: Bỏ qua exception để Spring Security tự chặn ở các bước sau
         }
 
         filterChain.doFilter(request, response);

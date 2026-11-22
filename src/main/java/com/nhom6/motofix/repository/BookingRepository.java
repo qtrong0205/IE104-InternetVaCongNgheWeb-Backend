@@ -26,6 +26,18 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     @Query("SELECT CASE WHEN COUNT(b) > 0 THEN TRUE ELSE FALSE END FROM Booking b WHERE b.provider.id = :providerId AND b.status IN :statuses")
     boolean hasActiveBookings(@Param("providerId") UUID providerId, @Param("statuses") Collection<BookingStatus> statuses);
 
+    @Query("SELECT b FROM Booking b WHERE b.customer.id = :customerId AND b.status IN :statuses ORDER BY b.createdAt DESC")
+    List<Booking> findActiveBookingsByCustomerId(
+            @Param("customerId") UUID customerId,
+            @Param("statuses") Collection<BookingStatus> statuses
+    );
+
+    @Query("SELECT b FROM Booking b WHERE b.provider.id = :providerId AND b.status IN :statuses ORDER BY b.createdAt DESC")
+    List<Booking> findActiveBookingsByProviderId(
+            @Param("providerId") UUID providerId,
+            @Param("statuses") Collection<BookingStatus> statuses
+    );
+
     @Query("SELECT b FROM Booking b WHERE b.provider.id = :providerId AND b.status IN :statuses")
     Page<Booking> findByProviderIdAndStatusIn(
             @Param("providerId") UUID providerId,

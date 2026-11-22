@@ -2,6 +2,7 @@ package com.nhom6.motofix.dto.respond;
 
 import com.nhom6.motofix.entity.Role;
 import com.nhom6.motofix.entity.User;
+import com.nhom6.motofix.enums.Gender;
 
 import java.time.LocalDateTime;
 import java.util.Set;
@@ -17,8 +18,24 @@ public record UserProfileResponse(
         String status,
         Set<String> roles,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        Gender gender,
+        String currentRole
 ) {
+    public UserProfileResponse(
+            UUID id,
+            String fullName,
+            String email,
+            String phone,
+            String avatarUrl,
+            String status,
+            Set<String> roles,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt
+    ) {
+        this(id, fullName, email, phone, avatarUrl, status, roles, createdAt, updatedAt, null, null);
+    }
+
     public static UserProfileResponse from(User user) {
         Set<String> roleNames = user.getRoles() == null ? Set.of() :
                 user.getRoles().stream()
@@ -34,8 +51,9 @@ public record UserProfileResponse(
                 user.getStatus(),
                 roleNames,
                 user.getCreatedAt(),
-                user.getUpdatedAt()
+                user.getUpdatedAt(),
+                user.getGender(),
+                user.getCurrentRole()
         );
     }
 }
-

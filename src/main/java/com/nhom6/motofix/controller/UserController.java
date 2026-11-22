@@ -1,6 +1,8 @@
 package com.nhom6.motofix.controller;
 
+import com.nhom6.motofix.dto.request.SwitchRoleRequest;
 import com.nhom6.motofix.dto.request.UpdateUserProfileRequest;
+import com.nhom6.motofix.dto.respond.SwitchRoleResponse;
 import com.nhom6.motofix.dto.respond.UserProfileResponse;
 import com.nhom6.motofix.entity.User;
 import com.nhom6.motofix.service.UserService;
@@ -28,7 +30,7 @@ public class UserController {
     }
 
     /**
-     * API 4: Cập nhật thông tin cá nhân (họ tên, số điện thoại, avatar).
+     * API 4: Cập nhật thông tin cá nhân (họ tên, số điện thoại, avatar, giới tính).
      * PUT /api/users/me
      */
     @PutMapping("/me")
@@ -38,5 +40,16 @@ public class UserController {
     ) {
         return ResponseEntity.ok(userService.updateProfile(user, request));
     }
-}
 
+    /**
+     * Chuyển đổi vai trò hiện tại (CUSTOMER <-> PROVIDER)
+     * PATCH /api/users/me/current-role
+     */
+    @PatchMapping("/me/current-role")
+    public ResponseEntity<SwitchRoleResponse> switchRole(
+            @AuthenticationPrincipal User user,
+            @Valid @RequestBody SwitchRoleRequest request
+    ) {
+        return ResponseEntity.ok(userService.switchRole(user, request));
+    }
+}

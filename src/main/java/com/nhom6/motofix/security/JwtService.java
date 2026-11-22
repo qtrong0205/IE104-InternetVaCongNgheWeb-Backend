@@ -2,7 +2,6 @@ package com.nhom6.motofix.security;
 
 import com.nhom6.motofix.entity.Role;
 import com.nhom6.motofix.entity.User;
-import com.nhom6.motofix.exception.BadRequestException;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
@@ -31,19 +30,17 @@ public class JwtService {
         this.expiration = expiration;
     }
 
-    // Tạo mã SecretKey từ chuỗi cấu hình Base64 để ký và giải mã Token
     private SecretKey getSigningKey() {
         byte[] keyBytes = Decoders.BASE64.decode(secret);
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
     /**
-     * Tạo JWT Token từ thông tin User (Lưu User ID vào Subject và Roles vào Claims)
+     * Tạo JWT Token từ thông tin User (Lưu User ID vào Subject, Roles, currentRole, tokenVersion vào Claims)
      */
     public String generateToken(User user) {
         Map<String, Object> claims = new HashMap<>();
 
-        // Đưa danh sách quyền (roles) vào payload
         claims.put(
                 "roles",
                 user.getRoles()
@@ -51,6 +48,8 @@ public class JwtService {
                         .map(Role::getName)
                         .toList()
         );
+        claims.put("currentRole", user.getCurrentRole() != null ? user.getCurrentRole() : "CUSTOMER");
+        claims.put("tokenVersion", user.getTokenVersion() != null ? user.getTokenVersion() : 0);
 
         return Jwts.builder()
                 .claims(claims)
@@ -61,9 +60,6 @@ public class JwtService {
                 .compact();
     }
 
-    /**
-     * Trích xuất User ID (Subject) lưu trong Token
-     */
     public String extractUserId(Jwt jwt) {
         return jwt.getSubject();
     }
@@ -72,37 +68,50 @@ public class JwtService {
         return extractClaim(token, Claims::getSubject);
     }
 
-    /**
-     * Trích xuất danh sách Roles lưu trong Token (Phục vụ cho Security Filter)
-     */
     @SuppressWarnings("unchecked")
     public List<String> extractRoles(String token) {
         return extractClaim(token, claims -> claims.get("roles", List.class));
     }
 
-    /**
-     * Hàm generic hỗ trợ trích xuất một thuộc tính bất kỳ trong Claims
-     */
+    public String extractCurrentRole(String token) {
+        return extractClaim(token, claims -> claims.get("currentRole", String.class));
+    }
+
+    public Integer extractTokenVersion(String token) {
+        return extractClaim(token, claims -> claims.get("tokenVersion", Integer.class));
+    }
+
     public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
         final Claims claims = extractAllClaims(token);
         return claimsResolver.apply(claims);
     }
 
-    /**
-     * Kiểm tra Token có hợp lệ với User hay không (Đúng User ID và chưa hết hạn)
-     */
     public boolean isTokenValid(String token, User user) {
         String userId = extractUserId(token);
-        // Sửa lỗi cú pháp: dùng toán tử && thay vì .and()
-        return userId.equals(user.getId().toString()) && !isTokenExpired(token);
+        boolean valid = userId != null && userId.equals(user.getId().toString()) && !isTokenExpired(token);
+        if (!valid) {
+            return false;
+        }
+
+        Integer tokenVersionInClaim = extractTokenVersion(token);
+        if (tokenVersionInClaim != null && user.getTokenVersion() != null) {
+            if (!tokenVersionInClaim.equals(user.getTokenVersion())) {
+                return false;
+            }
+        } else if (tokenVersionInClaim == null && user.getTokenVersion() != null && user.getTokenVersion() > 0) {
+            return false;
+        }
+        return true;
     }
 
-    // Kiểm tra Token đã hết hạn hay chưa
     private boolean isTokenExpired(String token) {
-        return extractClaim(token, Claims::getExpiration).before(new Date());
+        return extractExpiration(token).before(new Date());
     }
 
-    // Giải mã Token để lấy toàn bộ thông tin trong Payload (Ném lỗi nếu Token sai chữ ký/hết hạn)
+    private Date extractExpiration(String token) {
+        return extractClaim(token, Claims::getExpiration);
+    }
+
     private Claims extractAllClaims(String token) {
         return Jwts.parser()
                 .verifyWith(getSigningKey())

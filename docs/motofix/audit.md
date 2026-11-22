@@ -209,12 +209,32 @@ BE00 (Audit & Baseline) -> BE01 (Tài khoản & Phân quyền) -> BE02 (Hồ sơ
 -> BE06 (Đồng bộ & Nghiệm thu E2E)
 ```
 
-- **BE01 · Tài khoản, Phân quyền & Quản lý phiên:**
-  - Bổ sung `currentRole` và API `PATCH /api/users/me/current-role`.
-  - Triển khai chặn đăng xuất / chuyển vai khi có đơn active.
-  - Sửa `POST /api/auth/logout`: tự động offline thợ và expire offer.
-  - Thêm `gender` vào hồ sơ cá nhân; chuẩn hóa role `CUSTOMER` / `USER`.
-  - Triển khai luồng quên mật khẩu `POST /api/auth/forgot-password`.
+- **BE01 · Tài khoản, Phân quyền & Quản lý phiên (ĐÃ HOÀN THÀNH):**
+  - Đã bổ sung cột `"current_role"`, `gender`, `token_version`, `password_reset_token`, `password_reset_token_expiry` vào entity `User`.
+  - Hoàn thiện API `PATCH /api/users/me/current-role` chuyển vai và trả JWT token mới mang role cập nhật.
+  - Chặn đăng xuất / chuyển vai khi có đơn active ở cả 2 vai (`SEARCHING`..`WAITING_PAYMENT`) với mã `409 Conflict` kèm `bookingId` và `bookingStatus`.
+  - Sửa `POST /api/auth/logout`: tự động offline thợ và expire các offer `PENDING`/`ACCEPTED` trên các đơn `SEARCHING` trong cùng giao dịch; bump `tokenVersion` vô hiệu hóa phiên cũ.
+  - Chặn request từ tab vai cũ: khi user chuyển sang `CUSTOMER`, các thao tác nghiệp vụ của thợ bị chặn `403 Forbidden`.
+  - Chuẩn hóa `gender` (Enum `Gender` hỗ trợ `MALE`, `FEMALE`, `OTHER`, `Nam`, `Nữ`, `Khác`) và đảm bảo trường `email` là chỉ đọc (read-only).
+  - Triển khai độc lập `POST /api/auth/forgot-password` và `POST /api/auth/reset-password-with-token` (kiểm thử qua test double `MockEmailService`).
+  - Kiểm thử CRUD xe: đã có sẵn `CustomerVehicleService` đảm bảo ownership theo `user_id`.
+
+---
+
+## 7. Biên bản bàn giao đợt BE01 · Tài khoản, vai hiện tại và phiên
+
+- **Thời điểm nghiệm thu:** 2026-11-22
+- **Trạng thái:** Hoàn tất trọn vẹn mọi yêu cầu của BE01.
+- **Kết quả kiểm thử:**
+  - `AuthAndUserWorkflowTests`: 33/33 test cases PASS (100%).
+  - Toàn bộ test suite repository: 158/158 test cases PASS (100% không suy thoái).
+  - Lệnh kiểm tra thực tế:
+    - `.\mvnw.cmd test -Dtest=AuthAndUserWorkflowTests`
+    - `.\mvnw.cmd test`
+- **Ghi chú về Email:**
+  - Luồng gửi email đặt lại mật khẩu được kiểm thử thông qua test double `MockEmailService` (ghi nhận token và log, không gửi SMTP ra bên ngoài để đảm bảo tính ổn định và cô lập của test suite).
+- **Hợp đồng API cập nhật:**
+  - Đã cập nhật chi tiết trong [api-contract.md](file:///d:/IE104-InternetVaCongNgheWeb-Backend/docs/motofix/api-contract.md).
 - **BE02 · Hồ sơ thợ, Địa chỉ cơ sở & Xét duyệt:**
   - Bổ sung `address` cơ sở thợ vào entity và DTO.
   - Sửa logic duyệt thợ của Admin: giữ `is_active = false`.

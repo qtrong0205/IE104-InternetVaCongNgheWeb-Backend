@@ -1,8 +1,10 @@
 package com.nhom6.motofix.controller;
 
+import com.nhom6.motofix.dto.request.ForgotPasswordRequest;
 import com.nhom6.motofix.dto.request.LoginRequest;
 import com.nhom6.motofix.dto.request.RegisterRequest;
 import com.nhom6.motofix.dto.request.ResetPasswordRequest;
+import com.nhom6.motofix.dto.request.ResetPasswordWithTokenRequest;
 import com.nhom6.motofix.dto.respond.LoginResponse;
 import com.nhom6.motofix.dto.respond.MessageResponse;
 import com.nhom6.motofix.dto.respond.RegisterResponse;
@@ -28,10 +30,7 @@ public class AuthController {
     public ResponseEntity<RegisterResponse> register(
             @Valid @RequestBody RegisterRequest request
     ) {
-
-        RegisterResponse response =
-                authService.register(request);
-
+        RegisterResponse response = authService.register(request);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(response);
@@ -41,10 +40,7 @@ public class AuthController {
     public ResponseEntity<LoginResponse> login(
             @Valid @RequestBody LoginRequest request
     ) {
-
-        LoginResponse response =
-                authService.login(request);
-
+        LoginResponse response = authService.login(request);
         return ResponseEntity.ok(response);
     }
 
@@ -60,7 +56,29 @@ public class AuthController {
     }
 
     /**
-     * API 2: Đặt lại mật khẩu.
+     * API: Quên mật khẩu qua email từ trang login.
+     * POST /api/auth/forgot-password
+     */
+    @PostMapping("/forgot-password")
+    public ResponseEntity<MessageResponse> forgotPassword(
+            @Valid @RequestBody ForgotPasswordRequest request
+    ) {
+        return ResponseEntity.ok(authService.forgotPassword(request));
+    }
+
+    /**
+     * API: Đặt lại mật khẩu bằng reset token nhận từ email.
+     * POST /api/auth/reset-password-with-token
+     */
+    @PostMapping("/reset-password-with-token")
+    public ResponseEntity<MessageResponse> resetPasswordWithToken(
+            @Valid @RequestBody ResetPasswordWithTokenRequest request
+    ) {
+        return ResponseEntity.ok(authService.resetPasswordWithToken(request));
+    }
+
+    /**
+     * API 2: Đổi mật khẩu trong phiên (đã đăng nhập).
      * POST /api/auth/reset-password
      */
     @PostMapping("/reset-password")
