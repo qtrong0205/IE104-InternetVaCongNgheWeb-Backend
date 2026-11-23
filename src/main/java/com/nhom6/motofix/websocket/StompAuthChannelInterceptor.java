@@ -41,7 +41,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     private final BookingRepository bookingRepository;
     private final ProviderProfileRepository providerProfileRepository;
 
-    private static final Pattern BOOKING_TOPIC_PATTERN = Pattern.compile("^/topic/bookings/([a-fA-F0-9\\-]+)$");
+    private static final Pattern BOOKING_TOPIC_PATTERN = Pattern.compile("^/topic/bookings/([a-fA-F0-9\\-]+)(/.*)?$");
     private static final Pattern CUSTOMER_TOPIC_PATTERN = Pattern.compile("^/topic/customers/([a-fA-F0-9\\-]+)(/.*)?$");
     private static final Pattern PROVIDER_TOPIC_PATTERN = Pattern.compile("^/topic/providers/([a-fA-F0-9\\-]+)(/.*)?$");
 
@@ -150,10 +150,11 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             return;
         }
 
-        // 1. Kiểm tra quyền truy cập /topic/bookings/{bookingId}
+        // 1. Kiểm tra quyền truy cập /topic/bookings/{bookingId} và /topic/bookings/{bookingId}/** (ví dụ /chat)
         Matcher bookingMatcher = BOOKING_TOPIC_PATTERN.matcher(destination);
         if (bookingMatcher.matches()) {
             UUID bookingId = UUID.fromString(bookingMatcher.group(1));
+            String subPath = bookingMatcher.group(2);
             Booking booking = bookingRepository.findByIdWithCustomerAndProvider(bookingId).orElse(null);
 
             if (booking != null) {
@@ -165,6 +166,12 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
                 if (!isCustomer && !isAssignedProvider) {
                     log.warn("Access denied for user {} subscribing to booking topic {} (admin is restricted from personal booking topics)", user.getId(), destination);
                     throw new AccessDeniedException("You are not authorized to subscribe to booking " + bookingId);
+                }
+
+                // Nếu đăng ký kênh chat (/topic/bookings/{id}/chat): Chưa chọn thợ (SEARCHING) thì không mở chat
+                if ("/chat".equalsIgnoreCase(subPath) && booking.getStatus() == com.nhom6.motofix.enums.BookingStatus.SEARCHING) {
+                    log.warn("Access denied for user {} subscribing to chat on SEARCHING booking {}", user.getId(), bookingId);
+                    throw new AccessDeniedException("Chat is not available while booking is in SEARCHING status");
                 }
             } else {
                 log.warn("Booking not found for user {} subscribing to topic {}", user.getId(), destination);

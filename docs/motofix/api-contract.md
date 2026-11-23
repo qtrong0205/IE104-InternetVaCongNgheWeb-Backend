@@ -919,8 +919,87 @@
 | Thợ xác nhận hoàn tất sửa xe | Khách & Thợ phụ trách | `/topic/bookings/{bookingId}` | `BOOKING_COMPLETED_REPAIR` (`status: WAITING_PAYMENT`) | `GET /api/bookings/{bookingId}` |
 | Thợ xác nhận đã nhận tiền | Khách & Thợ phụ trách | `/topic/bookings/{bookingId}` | `PAYMENT_CONFIRMED` (`status: COMPLETED`) | `GET /api/bookings/{bookingId}` |
 | Khách hoặc thợ hủy đơn | Khách & Thợ phụ trách | `/topic/bookings/{bookingId}` | `BOOKING_CANCELLED` (`status: CANCELLED`) | `GET /api/bookings/{bookingId}` |
+| Khách hoặc thợ gửi tin nhắn chat | Khách & Thợ phụ trách | `/topic/bookings/{bookingId}/chat` | `CHAT_MESSAGE` | `GET /api/bookings/{bookingId}/messages` |
 
-### 11.2. Nhắn tin (Chat) hai bên `[ĐỀ XUẤT / CẦN BỔ SUNG]`
-- **Gửi tin:** `POST /api/bookings/{id}/messages` (hoặc gửi qua WebSocket STOMP)
-- **Đọc lịch sử tin:** `GET /api/bookings/{id}/messages`
-- **Quyền:** Chỉ khách và thợ phụ trách được gửi/đọc; chỉ mở sau khi chọn thợ (`SELECTED_PROVIDER`); chuyển sang chế độ chỉ đọc khi đơn `COMPLETED` hoặc `CANCELLED`.
+### 11.2. Nhắn tin (Chat) hai bên `[ĐÃ KIỂM THỬ]`
+
+#### A. Gửi tin nhắn mới
+- **Endpoint:** `POST /api/bookings/{id}/messages`
+- **Quyền:** `CUSTOMER` (chủ đơn) hoặc `PROVIDER` (thợ được phân công).
+- **Điều kiện trạng thái booking:**
+  - Booking phải đã chọn thợ (`SELECTED_PROVIDER`, `PROVIDER_SELECTED`, `PROVIDER_EN_ROUTE`, `INSPECTING`, `AWAITING_QUOTE_APPROVAL`, `IN_PROGRESS`, `WAITING_PAYMENT`).
+  - Khi booking ở `SEARCHING`: Trả về `409 Conflict` đối với khách (hoặc `403 Forbidden` đối với thợ chưa được chọn).
+  - Khi booking ở `COMPLETED` hoặc `CANCELLED`: Trả về `409 Conflict` ("Đơn cứu hộ đã kết thúc. Cuộc trò chuyện đã chuyển sang chế độ chỉ đọc").
+- **Request Body:**
+  ```json
+  {
+    "message": "Chào anh thợ, em đang đứng trước cây xăng"
+  }
+  ```
+- **Validation:** `message` không được rỗng, không toàn khoảng trắng, độ dài tối đa 1000 ký tự.
+- **Response (201 Created):**
+  ```json
+  {
+    "id": "7fa85f64-5717-4562-b3fc-2c963f66afa7",
+    "bookingId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "senderId": "1fa85f64-5717-4562-b3fc-2c963f66afa1",
+    "senderName": "Nguyen Van Khach",
+    "senderRole": "CUSTOMER",
+    "message": "Chào anh thợ, em đang đứng trước cây xăng",
+    "createdAt": "2026-11-23T10:00:00"
+  }
+  ```
+- **Gửi qua WebSocket STOMP:**
+  - Client gửi frame `SEND` đến destination: `/app/bookings/{bookingId}/chat` với body JSON `SendMessageRequest`.
+  - Áp dụng cùng tập quy tắc xác thực, kiểm tra quyền và chặn gửi khi đơn đã đóng.
+
+#### B. Đọc lịch sử tin nhắn
+- **Endpoint:** `GET /api/bookings/{id}/messages?page=0&size=50`
+- **Quyền:** Chỉ `CUSTOMER` chủ đơn và `PROVIDER` được phân công.
+- **Điều kiện:**
+  - Cho phép đọc khi đơn đang mở và cả sau khi đơn đã kết thúc (`COMPLETED` / `CANCELLED`).
+  - Chưa cho phép đọc khi đơn đang ở `SEARCHING` (409 Conflict).
+- **Response (200 OK):**
+  ```json
+  {
+    "content": [
+      {
+        "id": "7fa85f64-5717-4562-b3fc-2c963f66afa7",
+        "bookingId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "senderId": "1fa85f64-5717-4562-b3fc-2c963f66afa1",
+        "senderName": "Nguyen Van Khach",
+        "senderRole": "CUSTOMER",
+        "message": "Chào anh thợ, em đang đứng trước cây xăng",
+        "createdAt": "2026-11-23T10:00:00"
+      },
+      {
+        "id": "8fa85f64-5717-4562-b3fc-2c963f66afa8",
+        "bookingId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "senderId": "2fa85f64-5717-4562-b3fc-2c963f66afa2",
+        "senderName": "Pham Van Tho",
+        "senderRole": "PROVIDER",
+        "message": "Tôi đang trên đường tới, khoảng 10 phút nữa có mặt nhé",
+        "createdAt": "2026-11-23T10:01:00"
+      }
+    ],
+    "page": {
+      "size": 50,
+      "number": 0,
+      "totalElements": 2,
+      "totalPages": 1
+    }
+  }
+  ```
+  *(Các tin nhắn được sắp xếp tăng dần theo thời gian tạo `createdAt ASC`)*.
+
+#### C. Kênh WebSocket nhận tin nhắn thời gian thực
+- **STOMP Topic:** `/topic/bookings/{bookingId}/chat`
+- **Quyền Subscribe:** Chỉ khách và thợ được chọn (chặn khi đang `SEARCHING`, chặn người ngoài/admin).
+- **Event Type:** `CHAT_MESSAGE`
+- **Payload:** Chuẩn hóa theo `SyncEventPayload`:
+  - `eventType`: `CHAT_MESSAGE`
+  - `bookingId`: UUID booking
+  - `actorId`: UUID người gửi
+  - `message`: Nội dung tin nhắn
+  - `data`: Object `ChatMessageResponse` đầy đủ
+  - `snapshotUrl`: `/api/bookings/{bookingId}/messages` (dùng để client tải lại snapshot lịch sử khi rớt mạng / reconnect).

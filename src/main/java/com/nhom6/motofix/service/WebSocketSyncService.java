@@ -174,4 +174,24 @@ public class WebSocketSyncService {
         );
         eventPublisher.publishEvent(new BookingSyncApplicationEvent(dest, payload));
     }
+
+    /**
+     * Thông báo tin nhắn chat mới theo booking.
+     * Destination: /topic/bookings/{bookingId}/chat
+     */
+    public void notifyChatMessage(Booking booking, com.nhom6.motofix.dto.respond.ChatMessageResponse chatMessage) {
+        if (booking == null || chatMessage == null) return;
+        String dest = "/topic/bookings/" + booking.getId() + "/chat";
+        SyncEventPayload payload = SyncEventPayload.of(
+                SyncEventType.CHAT_MESSAGE,
+                booking.getId(),
+                booking.getStatus(),
+                null,
+                chatMessage.senderId(),
+                chatMessage.message(),
+                chatMessage,
+                "/api/bookings/" + booking.getId() + "/messages"
+        );
+        eventPublisher.publishEvent(new BookingSyncApplicationEvent(dest, payload));
+    }
 }

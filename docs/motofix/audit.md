@@ -113,13 +113,13 @@ Kết quả:
 | **Thợ: Lịch sử công việc** | Nhóm 09, TC-09-19..23; `BE06PaymentRevenueAndReviewWorkflowTests` | `GET /api/providers/bookings` | `ProviderController:getProviderBookings` | [ĐẠT / TESTED] | Trả danh sách đơn đã kết thúc (`COMPLETED`/`CANCELLED`), kèm snapshot xe, địa chỉ và mốc thanh toán `completedAt`. | **BE06 (Xong)** |
 | **Thợ: Xem doanh thu ngày** | Nhóm 09, TC-09-24..28; `BE06PaymentRevenueAndReviewWorkflowTests` | `GET /api/providers/me/revenue` | `ProviderController:getProviderRevenue` | [ĐẠT / TESTED] | Doanh thu tính theo ngày thực nhận (`completedAt`), tính trên quote `ACCEPTED` cuối cùng (sau khi revise). Đơn hủy không tính doanh thu. | **BE06 (Xong)** |
 | **Đồng bộ thời gian thực** | Nhóm 10, TC-10-01..05; `BE07WebSocketSyncWorkflowTests` | STOMP over WebSocket (`/ws`) | `WebSocketConfig`, `StompAuthChannelInterceptor`, `WebSocketEventBridge`, `WebSocketSyncService` | [ĐẠT / TESTED] | Kênh `/ws` xác thực JWT qua CONNECT, phân quyền kênh subscribe. Phát sự kiện sau COMMIT (`AFTER_COMMIT`), chống phát khi rollback. Cơ chế statusOrder chống lùi bước trạng thái, reconnect snapshot HTTP, chống nhân đôi doanh thu. | **BE07 (Xong)** |
-| **Nhắn tin (Chat) hai bên** | Nhóm 10, TC-10-06..10; V6 chat modal | Endpoint gửi/đọc tin nhắn | *Chưa có mapping* | Chưa triển khai | Mở sau khi khách chọn thợ, chuyển chỉ đọc khi hoàn tất/hủy. Triển khai sau khi đồng bộ trạng thái hoạt động ổn định. | **BE06** |
+| **Nhắn tin (Chat) hai bên** | Nhóm 10, TC-10-06..10; V6 chat modal; `BE08ChatWorkflowTests`, `BE08RealStompChatIntegrationTests` | `POST /api/bookings/{id}/messages`<br>`GET /api/bookings/{id}/messages`<br>STOMP `/topic/bookings/{id}/chat` | `ChatController:sendMessage`<br>`ChatController:getMessages`<br>`ChatController:sendStompMessage` | [ĐẠT / TESTED] | Chỉ khách và thợ đã chọn tham gia. Chặn chat khi SEARCHING (kể cả khi thợ đã ACCEPTED offer). Khi COMPLETED/CANCELLED chuyển sang chỉ đọc, chặn gửi tin mới (kể cả từ tab cũ sau hủy). Phát sự kiện tức thì qua WebSocket `/topic/bookings/{id}/chat` (`CHAT_MESSAGE`) và hỗ trợ snapshot HTTP phân trang có xác thực. | **BE08 (Xong)** |
 
 ---
 
 ## 4. Danh mục tổng hợp phân loại: Đúng / Lệch / Thiếu / Chưa kiểm thử
 
-### 4.1. Đúng & Đạt kiểm thử (Pass All Assertions - 21 API/Tính năng)
+### 4.1. Đúng & Đạt kiểm thử (Pass All Assertions - 24 API/Tính năng)
 1. `POST /api/users/me/vehicles` (Thêm xe khách)
 2. `GET /api/users/me/vehicles` (Danh sách xe khách)
 3. `PUT /api/users/me/vehicles/{id}` (Sửa xe khách)
@@ -141,6 +141,9 @@ Kết quả:
 19. `PATCH /api/bookings/{id}/payment/confirm` (Xác nhận nhận tiền mặt/chuyển khoản)
 20. `GET /api/bookings` (Lịch sử đơn kết thúc của khách)
 21. `GET /api/providers/bookings` (Lịch sử đơn kết thúc của thợ)
+22. `POST /api/bookings/{id}/messages` (Gửi tin nhắn chat theo booking)
+23. `GET /api/bookings/{id}/messages` (Đọc lịch sử chat phân trang - sắp xếp createdAt ASC)
+24. STOMP `/app/bookings/{bookingId}/chat` & `/topic/bookings/{bookingId}/chat` (Trò chuyện thời gian thực qua WebSocket; event type `CHAT_MESSAGE`)
 
 ### 4.2. Lệch so với đặc tả & giao diện V6 (Cần điều chỉnh hành vi - 9 điểm)
 1. **Admin duyệt thợ tự bật online:** `PATCH /api/admin/providers/{id}/approve` hiện tự gán `is_active = true`. Đặc tả Nhóm 03 & 11 chốt: duyệt xong phải giữ `offline` (`is_active = false`).
