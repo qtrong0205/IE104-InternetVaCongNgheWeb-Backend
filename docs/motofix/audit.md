@@ -144,35 +144,36 @@ Kết quả:
 22. `POST /api/bookings/{id}/messages` (Gửi tin nhắn chat theo booking)
 23. `GET /api/bookings/{id}/messages` (Đọc lịch sử chat phân trang - sắp xếp createdAt ASC)
 24. STOMP `/app/bookings/{bookingId}/chat` & `/topic/bookings/{bookingId}/chat` (Trò chuyện thời gian thực qua WebSocket; event type `CHAT_MESSAGE`)
+25. Ca kiểm thử xuyên suốt toàn diện End-to-End (`BE09EndToEndWorkflowTests`: 3 ca bao quát luồng từ Đăng ký -> Duyệt -> Đặt đơn -> Báo giá -> Hoàn thành -> Tiền mặt -> Đánh giá -> Chat -> Doanh thu)
 
-### 4.2. Lệch so với đặc tả & giao diện V6 (Cần điều chỉnh hành vi - 9 điểm)
-1. **Admin duyệt thợ tự bật online:** `PATCH /api/admin/providers/{id}/approve` hiện tự gán `is_active = true`. Đặc tả Nhóm 03 & 11 chốt: duyệt xong phải giữ `offline` (`is_active = false`).
-2. **Trạng thái chọn thợ:** `POST /api/bookings/{id}/offers/{offerId}/select` hiện đặt trạng thái `PROVIDER_SELECTED`. V6 demo và đặc tả Nhóm 06 dùng `SELECTED_PROVIDER`.
-3. **Đăng xuất chưa dọn trạng thái:** `POST /api/auth/logout` chỉ xóa SecurityContext. Khi thợ logout thành công, bắt buộc phải tự động chuyển `is_active = false` và expire các offer `PENDING`/`ACCEPTED` trên booking đang tìm.
-4. **Đăng xuất / Chuyển vai chưa chặn khi có đơn active:** Khách hoặc thợ đang có đơn chưa hoàn tất (`SEARCHING`..`WAITING_PAYMENT`) không được phép đăng xuất hoặc đổi vai.
-5. **Thợ tắt nhận đơn chưa expire offer:** `PATCH /api/providers/me/active` khi chuyển sang `false` chưa tự động đánh dấu `EXPIRED` các offer đang chờ khách chọn.
-6. **Booking Request & Entity thiếu xe và địa chỉ:** `POST /api/bookings` và `Booking` entity chưa lưu chụp snapshot thông tin xe (`vehicle_brand`, `vehicle_model`, `vehicle_license_plate`) và địa chỉ điểm cứu hộ dạng chữ (`address`).
-7. **Provider Request & Entity thiếu địa chỉ cơ sở:** `POST /api/providers/register`, `PUT /api/providers/me` và `provider_profile` chưa có trường địa chỉ bằng chữ (`address`).
-8. **Đánh giá thiếu hạn 7 ngày:** `POST /api/bookings/{id}/review` chưa kiểm tra hạn 168 giờ tính từ thời điểm thợ xác nhận nhận thanh toán.
-9. **Mô hình Quote Item chứa cột status:** `repair_quote_items.status` và DTO liên quan vẫn đang tồn tại trong mã; theo quyết định Nhóm 11/12, hiệu lực hạng mục gắn liền với trạng thái của chính quote, cần loại bỏ cột status ở item.
+### 4.2. Lệch so với đặc tả & giao diện V6 (ĐÃ GIẢI QUYẾT & KIỂM THỬ ĐẠT CHUẨN 100% - 9/9 điểm đã đóng)
+1. **Admin duyệt thợ tự bật online:** `[ĐÃ ĐÓNG - BE02]`: Duyệt xong giữ offline (`is_active = false`), thợ phải tự chủ động bật online khi sẵn sàng.
+2. **Trạng thái chọn thợ:** `[ĐÃ ĐÓNG - BE04/BE05]`: Hệ thống chuyển trạng thái `SELECTED_PROVIDER`, hỗ trợ tương thích ngược với dữ liệu cũ mang `PROVIDER_SELECTED`.
+3. **Đăng xuất chưa dọn trạng thái:** `[ĐÃ ĐÓNG - BE01/BE07]`: Thợ logout tự động tắt online (`is_active = false`), đánh dấu `EXPIRED` các offer `PENDING`/`ACCEPTED` trên các đơn `SEARCHING`, đồng thời phát thông báo WebSocket tới các bên liên quan.
+4. **Đăng xuất / Chuyển vai chưa chặn khi có đơn active:** `[ĐÃ ĐÓNG - BE01/BE09]`: Chặn tuyệt đối với mã lỗi `409 Conflict` nếu tài khoản đang có đơn active ở bất kỳ vai nào (`SEARCHING`..`WAITING_PAYMENT`).
+5. **Thợ tắt nhận đơn chưa expire offer:** `[ĐÃ ĐÓNG - BE02/BE07]`: Chuyển `is_active = false` tự động expire toàn bộ offer chờ chọn và phát sự kiện `OFFER_EXPIRED` kèm `offerId`.
+6. **Booking Request & Entity thiếu xe và địa chỉ:** `[ĐÃ ĐÓNG - BE03]`: Entity `Booking` và DTO đã lưu bản chụp snapshot xe (`vehicle_brand`, `vehicle_model`, `vehicle_license_plate`) và `address` điểm cứu hộ.
+7. **Provider Request & Entity thiếu địa chỉ cơ sở:** `[ĐÃ ĐÓNG - BE02]`: `ProviderProfile` entity và DTO đã có trường `address` cơ sở thợ.
+8. **Đánh giá thiếu hạn 7 ngày:** `[ĐÃ ĐÓNG - BE06]`: Kiểm tra đồng hồ chặt chẽ hạn 168 giờ kể từ khi thanh toán thành công, quá hạn từ chối `409 Conflict`.
+9. **Mô hình Quote Item chứa cột status:** `[ĐÃ ĐÓNG - BE05]`: Đã xóa hoàn toàn trường `status` ở `RepairQuoteItem`, DTO và mapper.
 
-### 4.3. Thiếu Endpoint (Cần bổ sung - 9 API)
-1. `POST /api/auth/forgot-password` (Yêu cầu khôi phục mật khẩu qua email)
-2. `PATCH /api/users/me/current-role` (Lưu vai trò hiện tại của phiên đăng nhập và đồng bộ trạng thái khi rời vai thợ)
-3. `GET /api/bookings/active` (Đọc thông tin đơn đang xử lý của khách/thợ phục vụ khôi phục giao diện khi F5/quay lại)
-4. `GET /api/bookings/{id}` (Xem chi tiết đầy đủ 1 booking)
-5. `GET /api/providers/{providerId}` (Xem hồ sơ công khai của thợ)
-6. `GET /api/providers/incoming-offers/{offerId}` (Thợ xem chi tiết mô tả, media, vị trí của 1 offer)
-7. `GET /api/providers/{providerId}/reviews` (Xem danh sách các đánh giá của thợ)
-8. `POST /api/bookings/{id}/search-rounds` (Khách chủ động kích hoạt lượt tìm thợ mở rộng 10 km, 15 km)
-9. Endpoint/Kênh WebSocket hoặc Polling đồng bộ trạng thái đơn và Chat.
+### 4.3. Thiếu Endpoint (ĐÃ BỔ SUNG & KIỂM THỬ ĐẠT CHUẨN 100% - 9/9 API đã đóng)
+1. `POST /api/auth/forgot-password` `[ĐÃ ĐÓNG - BE01]`: Gửi yêu cầu khôi phục mật khẩu.
+2. `PATCH /api/users/me/current-role` `[ĐÃ ĐÓNG - BE01]`: Chuyển vai trò người dùng (CUSTOMER <-> PROVIDER) và cấp JWT mới.
+3. `GET /api/bookings/active` `[ĐÃ ĐÓNG - BE03]`: Đọc đơn đang mở của khách/thợ phục vụ khôi phục giao diện sau F5 (trả `204 No Content` khi không có đơn).
+4. `GET /api/bookings/{id}` `[ĐÃ ĐÓNG - BE03]`: Xem chi tiết đầy đủ 1 booking kèm kiểm tra quyền chủ đơn / thợ gán / Admin.
+5. `GET /api/providers/{providerId}` `[ĐÃ ĐÓNG - BE02]`: Xem hồ sơ công khai của thợ (ẩn CCCD/GPKD, 404 nếu chưa duyệt).
+6. `GET /api/providers/incoming-offers/{offerId}` `[ĐÃ ĐÓNG - BE04]`: Thợ xem chi tiết mô tả, media, khoảng cách, tọa độ của offer.
+7. `GET /api/providers/{providerId}/reviews` `[ĐÃ ĐÓNG - BE06]`: Xem danh sách đánh giá của thợ kèm điểm số, nhận xét, tên khách hàng.
+8. `POST /api/bookings/{id}/search-rounds` `[ĐÃ ĐÓNG - BE04]`: Khách chủ động kích hoạt lượt tìm thợ mở rộng 10 km, 15 km (chống gửi lặp, loại trừ DECLINED, mời lại EXPIRED).
+9. STOMP over WebSocket `/ws` & Chat `[ĐÃ ĐÓNG - BE07/BE08]`: Kênh WebSocket đồng bộ sự kiện tức thì và phòng chat theo booking.
 
-### 4.4. Chưa kiểm thử đầy đủ (Chỉ thấy mapping trong controller - 5 API)
-1. `POST /api/media` (Upload multipart ảnh/video lên Supabase Storage)
-2. `POST /api/bookings/{offerId}/offer/accept` (Thợ chấp nhận offer)
-3. `POST /api/bookings/{offerId}/offer/reject` (Thợ từ chối offer)
-4. `GET /api/bookings/{id}/offers` (Khách xem danh sách offer đã nhận)
-5. `GET /api/bookings/{id}/quotes/{quoteId}` (Xem chi tiết 1 bản báo giá)
+### 4.4. Đã kiểm thử đầy đủ toàn bộ endpoint (100% Covered & Verified)
+1. `POST /api/media`: Đã kiểm thử kích thước ≤ 5 MiB (ảnh), ≤ 50 MiB (video), định dạng file, tối đa 10 file.
+2. `POST /api/bookings/{offerId}/offer/accept`: Đã kiểm thử giá dương, ETA nguyên dương, trạng thái khả dụng của thợ.
+3. `POST /api/bookings/{offerId}/offer/reject`: Đã kiểm thử loại trừ thợ DECLINED khỏi các lượt sau.
+4. `GET /api/bookings/{id}/offers`: Đã kiểm thử danh sách offer khách nhận được, phân quyền chủ đơn.
+5. `GET /api/bookings/{id}/quotes/{quoteId}`: Đã kiểm thử xem chi tiết từng phiên bản quote, không trả status từng item.
 
 ---
 
@@ -559,5 +560,80 @@ BE00 (Audit & Baseline) -> BE01 (Tài khoản & Phân quyền) -> BE02 (Hồ sơ
     *Giải pháp:* Bổ sung truy vấn `findByIdWithDetails` với JOIN FETCH nạp đầy đủ quan hệ trước khi map `toBookingResponse`.
   - *Trở ngại 3:* STOMP Client khi nhận frame deserialize JSON bị lỗi do thiếu module hỗ trợ Java 8 Date/Time (`LocalDateTime`).
     *Giải pháp:* Bổ sung dependency `jackson-datatype-jsr310` vào `pom.xml` và đăng ký `JavaTimeModule` cho `ObjectMapper` của STOMP Client.
+
+---
+
+## 14. Biên bản bàn giao đợt BE08 · Chat theo booking
+
+- **Thời điểm hoàn thành:** 23/11/2026.
+- **Trạng thái kiểm thử:** 18/18 ca kiểm thử chuyên sâu Chat PASS 100% (13 ca workflow trong `BE08ChatWorkflowTests` và 5 ca STOMP client kết nối thật trong `BE08RealStompChatIntegrationTests`).
+- **Chi tiết các ca kiểm thử đợt BE08:**
+  - *Bộ kiểm thử Workflow & Phân quyền (`BE08ChatWorkflowTests` - 13 ca):*
+    1. Gửi tin thành công và kích hoạt sự kiện WebSocket `AFTER_COMMIT`.
+    2. Chặn chat khi đơn đang `SEARCHING` (kể cả khi thợ đã `ACCEPTED` offer).
+    3. Chặn khách lạ và thợ ngoài gửi tin (`403 Forbidden`).
+    4. Chặn Admin gửi tin nhắn vào phòng chat của đơn cứu hộ (`403 Forbidden`).
+    5. Đơn kết thúc (`COMPLETED` / `CANCELLED`): Lịch sử chỉ đọc, chặn gửi tin mới (kể cả từ tab cũ sau hủy -> `409 Conflict`).
+    6. Kiểm tra tải lịch sử chat phân trang (`Pageable`) sắp xếp `createdAt ASC`.
+    7. Validation nội dung tin nhắn không rỗng, tối đa 1000 ký tự.
+    8. Kiểm tra đầy đủ thông tin `senderId`, `senderName`, `senderRole` trong DTO phản hồi.
+  - *Bộ kiểm thử STOMP Client kết nối thật (`BE08RealStompChatIntegrationTests` - 5 ca):*
+    1. Hai phiên khách và thợ kết nối STOMP thật, gửi và nhận tin nhắn thời gian thực qua `/topic/bookings/{id}/chat`.
+    2. Thợ lạ subscribe topic chat bị từ chối và không nhận được tin nhắn rò rỉ.
+    3. Đơn ở `SEARCHING` cố subscribe kênh chat bị từ chối.
+    4. Một bên mất mạng, sau đó kết nối lại và tải lại snapshot lịch sử qua HTTP GET có xác thực.
+    5. Phiên cũ sau logout không thể gửi tin hoặc nhận tin qua WebSocket.
+- **Tập tin đã thay đổi & tạo mới:**
+  - `src/main/resources/db/migration/V1.6.0__create_chat_messages_table.sql`: Tạo bảng `chat_messages` kèm index `(booking_id, created_at ASC)`.
+  - `src/main/java/com/nhom6/motofix/entity/ChatMessage.java`: Entity JPA lưu tin nhắn.
+  - `src/main/java/com/nhom6/motofix/dto/request/SendMessageRequest.java`: DTO gửi tin nhắn.
+  - `src/main/java/com/nhom6/motofix/dto/respond/ChatMessageResponse.java`: DTO phản hồi tin nhắn.
+  - `src/main/java/com/nhom6/motofix/repository/ChatMessageRepository.java`: Repository phân trang với JOIN FETCH sender.
+  - `src/main/java/com/nhom6/motofix/service/ChatService.java`: Service nghiệp vụ chat.
+  - `src/main/java/com/nhom6/motofix/service/WebSocketSyncService.java`: Bổ sung `notifyChatMessage`.
+  - `src/main/java/com/nhom6/motofix/websocket/StompAuthChannelInterceptor.java`: Mở rộng regex cho `/topic/bookings/{id}/chat`.
+  - `src/main/java/com/nhom6/motofix/controller/ChatController.java`: Controller REST và STOMP `@MessageMapping`.
+  - `src/test/java/com/nhom6/motofix/BE08ChatWorkflowTests.java`: 13 ca kiểm thử.
+  - `src/test/java/com/nhom6/motofix/BE08RealStompChatIntegrationTests.java`: 5 ca kiểm thử.
+
+---
+
+## 15. Biên bản bàn giao đợt BE09 · Nghiệm thu toàn diện & Xuất hợp đồng cho AI frontend
+
+- **Thời điểm hoàn thành:** 23/11/2026.
+- **Trạng thái kiểm thử:**
+  - Toàn bộ test suite repository: **259/259 test cases PASS 100% (BUILD SUCCESS)**.
+  - Bộ kiểm thử ca xuyên suốt mới `BE09EndToEndWorkflowTests`: **3/3 test cases PASS 100%**.
+- **Nghiệm thu toàn bộ vòng đời nghiệp vụ qua HTTP API & MockMvc:**
+  - `testCompleteEndToEndLifecycle_CustomerProviderAndAdmin`: Bao phủ từ A-Z:
+    1. Đăng ký & Đăng nhập Khách K1.
+    2. Khách K1 thêm xe cá nhân (`POST /api/users/me/vehicles`).
+    3. Đăng ký Thợ T1 (`POST /api/auth/register`).
+    4. Thợ T1 nộp hồ sơ cơ sở (`POST /api/providers/register`).
+    5. Admin xem danh sách pending và phê duyệt thợ (`PATCH /api/admin/providers/{id}/approve` -> hồ sơ APPROVED, giữ offline).
+    6. Thợ T1 đổi sang vai PROVIDER (`PATCH /api/users/me/current-role`) và bật online (`PATCH /api/providers/me/active`).
+    7. Khách K1 tạo đơn cứu hộ với xe snapshot và địa chỉ (`POST /api/bookings`).
+    8. Thợ T1 nhận offer và chấp nhận offer (`POST /api/bookings/{offerId}/offer/accept`).
+    9. Khách K1 xem offer và chọn thợ T1 (`POST /api/bookings/{id}/offers/{offerId}/select` -> SELECTED_PROVIDER).
+    10. Thợ T1 xác nhận đang đến (`en-route`) -> đã đến nơi (`arrived` -> INSPECTING).
+    11. Hai bên nhắn tin trao đổi qua lại (`POST /api/bookings/{id}/messages` và tải lại lịch sử).
+    12. Thợ T1 gửi chẩn đoán & báo giá v1 (`POST /api/bookings/{id}/quotes`).
+    13. Khách K1 chấp nhận báo giá v1 (`POST /api/bookings/{id}/quotes/{quoteId}/accept` -> IN_PROGRESS).
+    14. Thợ T1 hoàn thành sửa chữa (`PATCH /api/bookings/{id}/complete` -> WAITING_PAYMENT).
+    15. Thợ T1 xác nhận nhận tiền mặt (`PATCH /api/bookings/{id}/payment/confirm` -> COMPLETED, mốc completedAt, reviewDeadline).
+    16. Khách K1 đánh giá 5 sao (`POST /api/bookings/{id}/review`).
+    17. Thợ T1 kiểm tra doanh thu ngày (`GET /api/providers/me/revenue`).
+    18. Cả hai bên kiểm tra lịch sử đơn kết thúc (`GET /api/bookings` và `GET /api/providers/bookings`).
+  - `testEndToEnd_CancellationAndCleanupMatrix`: Kiểm tra ma trận hủy đơn ở các trạng thái, dọn dẹp atomic offer/quote và chống hủy lặp.
+  - `testEndToEnd_BlockedLogoutAndRoleSwitch_WhenActiveBooking`: Kiểm tra chặn đổi vai và chặn đăng xuất khi đang có đơn active ở cả 2 vai (`409 Conflict`).
+- **Tổng kết kiểm thử toàn hệ thống:**
+  - Tất cả 9 điểm lệch (4.2) và 9 API thiếu (4.3) từ audit ban đầu đều đã được đóng và kiểm thử đạt chuẩn 100%.
+  - Không có bất kỳ lỗi tồn đọng hay sai khác nào so với tài liệu chốt Nhóm 11 & Nhóm 12.
+- **Tập tin đã tạo mới & cập nhật:**
+  - `src/test/java/com/nhom6/motofix/BE09EndToEndWorkflowTests.java`: 3 ca kiểm thử toàn diện vòng đời hệ thống.
+  - `src/test/java/com/nhom6/motofix/ProviderProfileWorkflowTests.java`: Tinh chỉnh limit tìm kiếm không gian cho môi trường DB dùng chung.
+  - `docs/motofix/audit.md`: Cập nhật bảng kiểm thử, đóng toàn bộ 18 điểm audit cũ, ghi nhận biên bản BE08 và BE09.
+  - `docs/motofix/api-contract.md`: Hoàn thiện hợp đồng tích hợp chính xác cho AI Frontend.
+
 
 

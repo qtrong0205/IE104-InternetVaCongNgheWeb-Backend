@@ -1,7 +1,7 @@
 # MotoFix Backend · Hợp đồng API (API Contract)
 
-> **Phiên bản tài liệu:** 1.7.0 (Hoàn thành đợt BE07 · Đồng bộ WebSocket)  
-> **Phiên bản mã nguồn cơ sở (Git commit):** `BE07-release` (Branch: `main`)  
+> **Phiên bản tài liệu:** 1.8.0 (Hoàn thành đợt BE09 · Nghiệm thu toàn diện & xuất hợp đồng cho AI frontend)  
+> **Phiên bản mã nguồn cơ sở (Git commit):** `BE09-release` (Branch: `main`)  
 > **Hệ thống:** Java 17 / Spring Boot 4.1.1 / PostgreSQL 17.6 PostGIS / Supabase Storage  
 
 ---
@@ -66,14 +66,16 @@
 - **Response:** `200 OK`
   ```json
   {
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "type": "Bearer",
-    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "email": "customer@motofix.vn",
-    "fullName": "Nguyen Van A",
-    "roles": ["CUSTOMER"],
-    "currentRole": "CUSTOMER",
-    "gender": "MALE"
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "tokenType": "Bearer",
+    "user": {
+      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "email": "customer@motofix.vn",
+      "fullName": "Nguyen Van A",
+      "roles": ["CUSTOMER"],
+      "currentRole": "CUSTOMER",
+      "gender": "MALE"
+    }
   }
   ```
 - **Lỗi tiêu biểu:** `401 Unauthorized` (Sai tài khoản/mật khẩu, tài khoản bị khóa `status != active`).
@@ -1003,3 +1005,117 @@
   - `message`: Nội dung tin nhắn
   - `data`: Object `ChatMessageResponse` đầy đủ
   - `snapshotUrl`: `/api/bookings/{bookingId}/messages` (dùng để client tải lại snapshot lịch sử khi rớt mạng / reconnect).
+
+---
+
+## 12. Hướng dẫn tích hợp AI Frontend (React Integration Guide)
+
+### 12.1. Định danh Snapshot Backend & Môi trường chạy thử
+- **Commit / Snapshot Tag:** `BE09-final` (Head commit: `275d64d` + ca kiểm thử ca xuyên suốt BE09 `BE09EndToEndWorkflowTests`).
+- **Base HTTP URL:** `http://localhost:8080` (hoặc domain triển khai).
+- **Base WebSocket URL:** `http://localhost:8080/ws` (hỗ trợ cả STOMP over WebSocket thuần và fallback qua SockJS).
+- **Cơ chế xác thực:**
+  - HTTP REST: Header `Authorization: Bearer <accessToken>`.
+  - STOMP WebSocket: Gửi header `Authorization: Bearer <accessToken>` trong frame STOMP `CONNECT`.
+
+### 12.2. Dữ liệu thử nghiệm mẫu (Test Data - Không chứa thông tin bí mật)
+- **Tài khoản Admin:**
+  - Email: `admin@motofix.com` / Mật khẩu: `AdminPass123@`
+- **Tài khoản Thợ sửa xe mẫu (Đã duyệt, sẵn sàng nhận việc):**
+  - Email: `tho1@motofix.com` / Mật khẩu: `Password123@`
+  - Cơ sở: `123 Lê Lợi, Phường Bến Nghé, Quận 1, TP.HCM` (Tọa độ: 10.7769, 106.7009; bán kính phục vụ: 10 km).
+- **Tài khoản Khách hàng mẫu:**
+  - Email: `khach1@motofix.com` / Mật khẩu: `Password123@`
+  - Xe đã lưu: `Honda Air Blade 125` (Biển số: `59-X1 12345`).
+- **Tọa độ cứu hộ thử nghiệm:**
+  - Địa chỉ: `135 Hai Bà Trưng, Phường Bến Nghé, Quận 1, TP.HCM` (Tọa độ: 10.7800, 106.6990).
+
+### 12.3. Bảng tra cứu các Enums trạng thái
+
+#### A. Trạng thái đơn cứu hộ (`BookingStatus`)
+| Giá trị | Thứ tự logic | Mô tả & Màn hình hiển thị trên UI |
+|---|---|---|
+| `SEARCHING` | 1 | Đang tìm kiếm thợ cứu hộ trong bán kính (5/10/15 km). Hiển thị vòng quay tìm kiếm và danh sách thợ phản hồi. |
+| `SELECTED_PROVIDER` | 2 | Khách đã chọn thợ. Đơn chuyển giao cho thợ phụ trách, khóa không cho khách chọn thợ khác. |
+| `PROVIDER_EN_ROUTE` | 3 | Thợ xác nhận đang di chuyển tới vị trí của khách hàng. Mở tính năng Chat. |
+| `INSPECTING` | 4 | Thợ đã đến nơi và đang tiến hành khám, chẩn đoán tình trạng xe. |
+| `IN_PROGRESS` | 5 | Khách hàng đã duyệt báo giá (v1 hoặc bản sửa đổi). Thợ đang thực hiện sửa chữa. |
+| `WAITING_PAYMENT` | 6 | Thợ đã sửa xong (đã tích kiểm tra checklist trên UI và bấm hoàn thành), đang chờ thanh toán. |
+| `COMPLETED` | 7 | Thợ đã xác nhận nhận tiền mặt hoặc chuyển khoản. Đơn kết thúc thành công, mở nút đánh giá cho khách (hạn 168h). |
+| `CANCELLED` | 8 | Đơn đã bị hủy bởi Khách hoặc Thợ theo đúng ma trận quyền hủy. |
+
+#### B. Trạng thái phản hồi của Thợ (`OfferStatus`)
+| Giá trị | Ý nghĩa nghiệp vụ |
+|---|---|
+| `PENDING` | Offer được gửi tự động tới thợ, đang chờ thợ bấm Đồng ý hoặc Từ chối (có thời hạn `expires_at`). |
+| `ACCEPTED` | Thợ đã đồng ý nhận việc, kèm giá dự kiến và thời gian đến. Hiển thị trong danh sách chờ khách chọn. |
+| `DECLINED` | Thợ chủ động bấm từ chối nhận việc. Thợ này bị loại trừ khỏi tất cả các vòng tìm lại sau của cùng đơn. |
+| `EXPIRED` | Hết hạn phản hồi PENDING, hoặc thợ tắt nhận việc/logout, hoặc khách chọn thợ khác. Có thể được mời lại ở các vòng tìm sau. |
+
+#### C. Trạng thái bản báo giá (`QuoteStatus`)
+| Giá trị | Ý nghĩa nghiệp vụ |
+|---|---|
+| `PENDING` | Bản báo giá thợ vừa tạo hoặc vừa sửa (revise), đang đợi khách hàng xem và bấm duyệt. |
+| `ACCEPTED` | Bản báo giá đang có hiệu lực thi công (duy nhất 1 bản ACCEPTED trong đơn). |
+| `SUPERSEDED` | Bản báo giá cũ đã từng được duyệt nhưng sau đó bị thay thế bởi một bản phát sinh mới được khách duyệt. |
+| `CANCELLED` | Bản báo giá bị hủy (do thợ rollback, hoặc thợ revise bản pending, hoặc toàn bộ đơn bị hủy). |
+
+#### D. Trạng thái xét duyệt Thợ (`ApprovalStatus`)
+| Giá trị | Ý nghĩa |
+|---|---|
+| `PENDING` | Hồ sơ mới nộp hoặc vừa cập nhật cơ sở, đang chờ Admin duyệt. `is_active` luôn là `false`. |
+| `APPROVED` | Đã được Admin duyệt thành công. Ban đầu thợ giữ offline (`is_active = false`), thợ phải tự bấm bật online. |
+| `REJECTED` | Bị Admin từ chối kèm lý do `rejectionReason`. Thợ có thể sửa và nộp lại hồ sơ. |
+
+---
+
+### 12.4. Trình tự luồng tích hợp cho AI Frontend (React Journey from A to Z)
+
+```
+[Khách] Đăng ký/Đăng nhập -> [Khách] Thêm xe -> [Khách] Tạo Booking
+             |
+             v
+[Server] Quét thợ PostGIS 5 km -> Tự động phát sinh Offers
+             |
+             v
+[Thợ] Nhận thông báo WebSocket -> Vào Inbox -> Bấm Chấp nhận (kèm giá & ETA)
+             |
+             v
+[Khách] Nhận cập nhật Offer qua WebSocket -> Bấm "Chọn thợ này"
+             |
+             v
+[Thợ] Nhận sự kiện PROVIDER_SELECTED -> Bấm "Bắt đầu đi" (EN_ROUTE) -> "Đã đến nơi" (INSPECTING)
+             |
+             v (Kênh Chat hai bên hoạt động song song)
+[Thợ] Khám xe -> Gửi báo giá v1 (POST /api/bookings/{id}/quotes)
+             |
+             v
+[Khách] Xem chi tiết báo giá -> Bấm "Đồng ý sửa" (Accept quote -> IN_PROGRESS)
+             |
+             v
+[Thợ] Sửa xe xong -> Tích checklist trên UI -> Bấm "Hoàn thành" (Complete -> WAITING_PAYMENT)
+             |
+             v
+[Khách] Thanh toán trực tiếp (Tiền mặt / Chuyển khoản)
+             |
+             v
+[Thợ] Nhận đủ tiền -> Bấm "Xác nhận nhận tiền" (Confirm Payment -> COMPLETED)
+             |
+             v
+[Khách] Đánh giá chất lượng 1-5 sao (Thời hạn 7 ngày / 168 giờ)
+```
+
+### 12.5. Ma trận mã lỗi và cách ứng xử trên giao diện Frontend
+
+| Mã HTTP | Ý nghĩa | Dấu hiệu nhận biết trong Body | Cách hiển thị trên UI Frontend |
+|---|---|---|---|
+| `400 Bad Request` | Dữ liệu không hợp lệ | `"message": "..."`, các lỗi Bean Validation | Hiển thị thông báo lỗi màu đỏ ngay dưới trường nhập liệu hoặc toast cảnh báo. |
+| `401 Unauthorized` | Phiên làm việc hết hạn | `"tokenVersion"` thay đổi, token invalid/expired | Xóa JWT khỏi `localStorage`, điều hướng người dùng về màn hình `/login` kèm toast "Phiên đăng nhập đã hết hạn". |
+| `403 Forbidden` | Không có quyền truy cập | Người ngoài hoặc sai role | Hiển thị modal hoặc toast "Bạn không có quyền thực hiện hành động này". |
+| `404 Not Found` | Không tìm thấy tài nguyên | ID không tồn tại | Hiển thị trang hoặc empty-state "Không tìm thấy dữ liệu". |
+| `409 Conflict` | Xung đột nghiệp vụ | Có `bookingId`, `bookingStatus` hoặc thông báo xung đột | Xử lý theo từng tình huống: |
+| | *Khi Đăng xuất / Chuyển vai:* | Đang có đơn dở dang | Hiển thị modal cảnh báo "Bạn đang có đơn cứu hộ chưa hoàn thành. Không thể đăng xuất/chuyển vai!" kèm nút "Đi đến đơn cứu hộ". |
+| | *Khi Chọn thợ:* | Thợ vừa nhận đơn khác | Toast "Thợ này vừa nhận một đơn cứu hộ khác, vui lòng chọn thợ khả dụng khác trong danh sách". |
+| | *Khi Duyệt quote:* | Quote đã bị sửa đổi / rollback | Toast "Báo giá này đã được cập nhật bởi thợ, đang tải phiên bản mới nhất..." và tự động gọi lại `GET /api/bookings/{id}/quotes`. |
+| | *Khi Đánh giá:* | Đã đánh giá hoặc quá 168 giờ | Toast thông báo "Đơn này đã được đánh giá hoặc đã hết hạn đánh giá 7 ngày". |
+

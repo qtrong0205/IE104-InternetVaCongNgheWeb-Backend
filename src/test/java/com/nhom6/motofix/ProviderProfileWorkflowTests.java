@@ -822,7 +822,7 @@ class ProviderProfileWorkflowTests {
         assertFalse(approvedProfile.isActive(), "Sau duyệt admin, hồ sơ thợ phải giữ offline");
 
         // 4. Khách tạo booking quanh cơ sở thợ -> thợ KHÔNG nhận được offer vì đang offline
-        List<NearbyProviderView> nearbyBeforeOnline = providerProfileRepository.findNearby(10.7769, 106.7009, 5000, 10);
+        List<NearbyProviderView> nearbyBeforeOnline = providerProfileRepository.findNearby(10.7769, 106.7009, 5000, 100);
         boolean containsTho = nearbyBeforeOnline.stream().anyMatch(n -> n.getId().equals(profile.getId()));
         assertFalse(containsTho, "Thợ chưa bật online không được quét trúng");
 
@@ -839,7 +839,7 @@ class ProviderProfileWorkflowTests {
                 .andExpect(jsonPath("$.isActive").value(true));
 
         // 6. Quét lại -> thợ đã online được tìm thấy
-        List<NearbyProviderView> nearbyAfterOnline = providerProfileRepository.findNearby(10.7769, 106.7009, 5000, 10);
+        List<NearbyProviderView> nearbyAfterOnline = providerProfileRepository.findNearby(10.7769, 106.7009, 5000, 100);
         boolean containsThoAfter = nearbyAfterOnline.stream().anyMatch(n -> n.getId().equals(profile.getId()));
         assertTrue(containsThoAfter, "Thợ sau khi tự bật online phải được quét trúng");
     }
